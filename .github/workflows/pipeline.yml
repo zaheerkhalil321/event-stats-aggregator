@@ -28,7 +28,7 @@ on:
         options: ['all', 'season-7', 'season-8']
 
 jobs:
-  sync-parallel:
+  sync-matrix:
     name: Ingest ${{ matrix.season }} (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -45,7 +45,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: 📦 Install dependencies
         run: npm install
