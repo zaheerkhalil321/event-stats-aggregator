@@ -1,0 +1,69 @@
+﻿name: ⚡ Event Data Pipeline
+
+on:
+  schedule:
+    # Run every Monday at 6:00 AM UTC (after weekend races)
+    - cron: '0 6 * * 1'
+
+  # Allow manual trigger with optional dry-run and season filter
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no DB writes)?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      force_resync:
+        description: 'Force re-sync all athletes (ignore checkpoints)?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      season:
+        description: 'Dataset season to ingest (leave "all" for parallel matrix sync)'
+        required: false
+        default: 'all'
+        type: choice
+        options: ['all', 'season-7', 'season-8']
+
+jobs:
+  sync-parallel:
+    name: Ingest ${{ matrix.season }} (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        season: ['season-7', 'season-8']
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm install
+
+      - name: 🌐 Install Playwright Chromium browser
+        run: npx playwright install chromium --with-deps
+
+      - name: 🔄 Execute Ingest for ${{ matrix.season }}
+        if: github.event.inputs.season == 'all' || github.event.inputs.season == '' || github.event.inputs.season == null || github.event.inputs.season == matrix.season
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          FLAGS="--season ${{ matrix.season }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --test"
+          fi
+          if [ "${{ github.event.inputs.force_resync }}" = "true" ]; then
+            FLAGS="$FLAGS --force"
+          fi
+          node sync_events.mjs $FLAGS

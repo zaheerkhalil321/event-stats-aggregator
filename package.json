@@ -1,0 +1,16 @@
+﻿{
+  "name": "event-stats-aggregator",
+  "version": "1.0.0",
+  "description": "Automated athletic event timing and leaderboard ingest pipeline",
+  "type": "module",
+  "main": "sync_events.mjs",
+  "scripts": {
+    "sync": "node sync_events.mjs",
+    "sync:test": "node sync_events.mjs --test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7",
+    "playwright": "^1.50.1"
+  }
+}
