@@ -785,17 +785,6 @@ async function main() {
             continue;
           }
 
-          if (IS_TEST) {
-            console.log('   ðŸ‘¤ Sample:',
-              athletes.slice(0, 3).map((a) => `${a.overall_rank}. ${a.full_name} (${a.total_time})`).join(' | '),
-            );
-            try {
-              const { writeFileSync } = await import('fs');
-              writeFileSync('athletes_sample.json', JSON.stringify(athletes, null, 2));
-              console.log(`   ðŸ’¾ Saved ${athletes.length} athletes to athletes_sample.json (locally)`);
-            } catch (_) {}
-          }
-
           // Fetch splits for all athletes
           const splitsLimit = Math.min(DEEP_SPLITS_LIMIT, athletes.length);
           if (splitsLimit > 0) {
@@ -804,6 +793,13 @@ async function main() {
               process.stdout.write(`   âš¡ [${i + 1}/${splitsLimit}] ${athletes[i].full_name}...\r`);
               athletes[i] = await scrapeAthleteDetail(page, athletes[i]);
             }
+          }
+          if (IS_TEST) {
+            try {
+              const { writeFileSync } = await import('fs');
+              writeFileSync('athletes_sample.json', JSON.stringify(athletes.slice(0, Math.max(50, splitsLimit)), null, 2));
+              console.log(`\n   💾 Saved enriched sample athletes to athletes_sample.json (with Bibs, Age Groups, Real Nations & Splits!)`);
+            } catch (_) {}
           }
 
           const success = await batchUpsert(athletes);
