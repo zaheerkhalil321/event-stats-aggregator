@@ -202,14 +202,33 @@ function parseAthletes(html, raceId, division, gender) {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function parseSplits(html) {
   const getSplit = (keyword) => {
-    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\function parseSplits(html) {
-  const getSplit = (keyword) => {
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`${escaped}[\\s\\S]{0,300}?(\\d{1,2}:\\d{2}(?::\\d{2})?)`, 'i');
     const m = html.match(re);
     return m ? m[1] : null;
   };
+
+  const getMeta = (labelRegex) => {
+    const m = html.match(new RegExp(`<t[hd][^>]*>${labelRegex.source}[^<]*<\\/t[hd]>\\s*<t[hd][^>]*>([^<]+)<\\/t[hd]>`, 'i'))
+           || html.match(new RegExp(`${labelRegex.source}[\\s\\S]{0,100}?<td[^>]*>([^<]+)<\\/td>`, 'i'));
+    return m ? m[1].replace(/&nbsp;/g, ' ').trim() : null;
+  };
+
+  const bib = getMeta(/Bib\s*Number|Startnummer|Bib/i);
+  const ageGroup = getMeta(/Age\s*Group|Altersklasse|AK/i);
+  const nat = getMeta(/Nat(?:ionality)?|Nation|Country/i);
+  const rankMW = getMeta(/Rank\s*\\(M\\/W\\)|Gender\s*Rank/i);
+  const rankAG = getMeta(/Rank\s*\\(AG\\)|Age\s*Group\s*Rank/i);
+
+  const metaUpdates = {};
+  if (bib && bib !== '–' && bib !== '-') metaUpdates.bib_number = bib;
+  if (ageGroup && ageGroup !== '–' && ageGroup !== '-') metaUpdates.age_group = ageGroup;
+  if (nat && nat !== '–' && nat !== '-' && nat !== 'XX') metaUpdates.nationality = nat;
+  if (rankMW && !isNaN(parseInt(rankMW, 10))) metaUpdates.gender_rank = parseInt(rankMW, 10);
+  if (rankAG && !isNaN(parseInt(rankAG, 10))) metaUpdates.age_group_rank = parseInt(rankAG, 10);
+
   return {
+    ...metaUpdates,
     run_1: getSplit('Running 1'),
     skierg: getSplit('1000m SkiErg'),
     run_2: getSplit('Running 2'),
