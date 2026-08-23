@@ -1,15 +1,15 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
- * scripts/sync_hyrox.mjs â€” RoxDay Full HYROX Data Pipeline (Playwright Edition)
+ * scripts/sync_hyrox.mjs — RoxDay Full HYROX Data Pipeline (Playwright Edition)
  * =================================================================================
  * Uses a real headless browser (Playwright/Chromium) to scrape results.hyrox.com.
  * This bypasses Cloudflare/bot protection and handles JavaScript-rendered content.
  *
  * Scrapes:
- *   â€¢ All completed seasons (S6=24/25, S7=25/26, S8=26/27)
- *   â€¢ All 7 divisions per race (PRO MEN/WOMEN, MEN/WOMEN, DOUBLES MEN/WOMEN, RELAY)
- *   â€¢ Top 200 athletes per division (paginated: 2 pages Ã— 100)
- *   â€¢ Full 17-split station times for top 50 athletes per division
+ *   • All completed seasons (S6=24/25, S7=25/26, S8=26/27)
+ *   • All 7 divisions per race (PRO MEN/WOMEN, MEN/WOMEN, DOUBLES MEN/WOMEN, RELAY)
+ *   • Top 200 athletes per division (paginated: 2 pages × 100)
+ *   • Full 17-split station times for top 50 athletes per division
  *
  * Usage:
  *   node scripts/sync_hyrox.mjs --test              # dry-run, no DB writes
@@ -26,9 +26,9 @@ import * as fs from 'fs';
 import { readFileSync, existsSync } from 'fs';
 import { syncOfficialCalendar } from './sync_calendar.mjs';
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Config & Auto-load .env
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 if (!process.env.SUPABASE_ACCESS_TOKEN && existsSync('.env')) {
   const envContent = readFileSync('.env', 'utf-8');
   const match = envContent.match(/SUPABASE_ACCESS_TOKEN=([^\r\n]+)/);
@@ -56,18 +56,18 @@ const FORCE_RACE = raceArg !== -1 ? process.argv[raceArg + 1] : null;
 const divArg = process.argv.indexOf('--division');
 const FORCE_DIV = divArg !== -1 ? process.argv[divArg + 1] : null;
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // HYROX Seasons to sync
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 const SEASONS = [
   { slug: 'season-7', label: '24/25' },
   { slug: 'season-8', label: '25/26' },
   { slug: 'season-9', label: '26/27' },
 ];
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // All 7 divisions (gender correctly mapped)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 const DIVISIONS = [
   { label: 'HYROX PRO MEN', sex: 'M', gender: 'M', event: 'HYROX PRO' },
   { label: 'HYROX PRO WOMEN', sex: 'W', gender: 'F', event: 'HYROX PRO' },
@@ -83,29 +83,29 @@ const DIVISIONS = [
   { label: 'HYROX TEAM RELAY MIXED', sex: 'X', gender: 'X', event: 'HYROX TEAM RELAY' }
 ];
 
-const MAX_PAGES = 5000;             // Hard safety cap: 5000 pages Ã— 100 = 500,000 athletes max
+const MAX_PAGES = 5000;             // Hard safety cap: 5000 pages × 100 = 500,000 athletes max
 const splitsLimitArg = process.argv.find(arg => arg.startsWith('--splits='))?.split('=')[1]
                        || (process.argv.includes('--splits') ? process.argv[process.argv.indexOf('--splits') + 1] : null);
 const DEEP_SPLITS_LIMIT = splitsLimitArg ? (splitsLimitArg === 'all' || splitsLimitArg === 'Infinity' ? Infinity : parseInt(splitsLimitArg, 10)) : 50;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Banner
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 console.log('='.repeat(68));
-console.log('  ðŸƒ HYROX Full Data Pipeline â€” RoxDay (Playwright Edition)');
-console.log(`  ðŸ•’ Started: ${new Date().toISOString()}`);
-console.log(`  ðŸŽ¯ Mode: ${IS_TEST ? 'DRY-RUN (no DB writes)' : 'LIVE â†’ Supabase'}`);
-if (FORCE_SEASON) console.log(`  ðŸ“… Season: ${FORCE_SEASON}`);
+console.log('  🏃 HYROX Full Data Pipeline — RoxDay (Playwright Edition)');
+console.log(`  🕒 Started: ${new Date().toISOString()}`);
+console.log(`  🎯 Mode: ${IS_TEST ? 'DRY-RUN (no DB writes)' : 'LIVE → Supabase'}`);
+if (FORCE_SEASON) console.log(`  📅 Season: ${FORCE_SEASON}`);
 console.log('='.repeat(68) + '\n');
 
 if (!IS_TEST && !TOKEN) {
-  console.error('âŒ Missing SUPABASE_ACCESS_TOKEN.');
+  console.error('❌ Missing SUPABASE_ACCESS_TOKEN.');
   process.exit(1);
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 async function runQuery(sql, retries = 3, delayMs = 1500) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -119,7 +119,7 @@ async function runQuery(sql, retries = 3, delayMs = 1500) {
       );
       if (res.status === 429 || res.status >= 500) {
         const errorText = await res.text().catch(() => '');
-        console.warn(`   âš ï¸ Supabase rate-limit/server (${res.status}) on attempt ${attempt}/${retries}. Retrying in ${delayMs}ms...`);
+        console.warn(`   ⚠️ Supabase rate-limit/server (${res.status}) on attempt ${attempt}/${retries}. Retrying in ${delayMs}ms...`);
         if (attempt < retries) {
           await sleep(delayMs);
           delayMs *= 2;
@@ -131,7 +131,7 @@ async function runQuery(sql, retries = 3, delayMs = 1500) {
       return res.json();
     } catch (err) {
       if (attempt < retries && (err.message.includes('429') || err.message.includes('fetch failed'))) {
-        console.warn(`   âš ï¸ Supabase connection error: ${err.message}. Retrying in ${delayMs}ms...`);
+        console.warn(`   ⚠️ Supabase connection error: ${err.message}. Retrying in ${delayMs}ms...`);
         await sleep(delayMs);
         delayMs *= 2;
         continue;
@@ -141,16 +141,16 @@ async function runQuery(sql, retries = 3, delayMs = 1500) {
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Base URL for a season
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 function seasonBaseUrl(seasonSlug) {
   return `https://results.hyrox.com/${seasonSlug}/`;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Parse athlete rows from rendered HTML
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 function parseAthletes(html, raceId, division, gender) {
   const athletes = [];
   const seen = new Set();
@@ -197,9 +197,9 @@ function parseAthletes(html, raceId, division, gender) {
   return athletes;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Parse splits from athlete detail page HTML
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 function parseSplits(html) {
   const getSplit = (keyword) => {
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -228,10 +228,10 @@ function parseSplits(html) {
   };
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Scrape leaderboard by interacting with Mika Timing form
-// (URL params alone don't work â€” the site needs form submit)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// (URL params alone don't work — the site needs form submit)
+// ──────────────────────────────────────────────────────
 async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) {
   const athletes = [];
   const listUrl = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
@@ -240,7 +240,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
   let lastPageSignature = '';
 
   for (let p = 1; p <= targetPages; p++) {
-    process.stdout.write(`   ðŸ“¥ [${div.label}] Page ${p}${targetPages < 50000 ? '/' + targetPages : ''} (${athletes.length} loaded)\r`);
+    process.stdout.write(`   📥 [${div.label}] Page ${p}${targetPages < 50000 ? '/' + targetPages : ''} (${athletes.length} loaded)\r`);
 
     try {
       // On page 1: ensure we are on the list form, select fields, and submit
@@ -285,7 +285,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               const overallOpt = options.find(o => {
                 const t = o.text.toUpperCase().trim();
                 const isOverall = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
-                const beforeOverall = t.replace(/\s*[-â€“(]?\s*OVERALL\s*\)?$/i, '').trim();
+                const beforeOverall = t.replace(/\s*[-–(]?\s*OVERALL\s*\)?$/i, '').trim();
                 return isOverall && beforeOverall === expectedEvent;
               });
               if (overallOpt) return overallOpt.value;
@@ -300,7 +300,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                 return (
                   t === expectedEvent ||
                   t.startsWith(`${expectedEvent} -`) ||
-                  t.startsWith(`${expectedEvent} â€“`) ||
+                  t.startsWith(`${expectedEvent} –`) ||
                   t.startsWith(`${expectedEvent} (`)
                 );
               });
@@ -332,11 +332,11 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               ]);
               await page.waitForTimeout(1000);
             } else {
-              console.log(`   â­ï¸  [${div.label}] Not found in dropdown â€” skipping.`);
+              console.log(`   ⏭️  [${div.label}] Not found in dropdown — skipping.`);
               break;
             }
           } else {
-             console.log(`   â­ï¸  [${div.label}] Form event select not found â€” skipping.`);
+             console.log(`   ⏭️  [${div.label}] Form event select not found — skipping.`);
              break;
           }
 
@@ -409,7 +409,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
           await numPageLink.click();
           clicked = true;
         } else {
-          const nextBtn = page.locator('.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], a.silver-link:not(.disabled):has-text("â€º"), a.silver-link:not(.disabled):has-text("Â»"), a.silver-link:not(.disabled):has-text(">"), li.pages-nav-button a:has-text("â€º"), li.pages-nav-button a:has-text("Â»"), li.pages-nav-button a:has-text(">")').first();
+          const nextBtn = page.locator('.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], a.silver-link:not(.disabled):has-text("›"), a.silver-link:not(.disabled):has-text("»"), a.silver-link:not(.disabled):has-text(">"), li.pages-nav-button a:has-text("›"), li.pages-nav-button a:has-text("»"), li.pages-nav-button a:has-text(">")').first();
           if (await nextBtn.isVisible().catch(() => false)) {
             await nextBtn.click();
             clicked = true;
@@ -431,7 +431,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
         break;
       }
 
-      // â”€â”€ Loop-Breaker: Check if page returned the exact same athletes as previous page â”€â”€
+      // ── Loop-Breaker: Check if page returned the exact same athletes as previous page ──
       const currentSig = pageAthletes.map(a => `${a.full_name}|${a.bib_number || ''}|${a.overall_rank || ''}`).join(';;');
       if (currentSig === lastPageSignature) {
         // Reached end of pagination (Mika Timing repeats last page when clicking beyond end)
@@ -462,8 +462,8 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
 
       if (pageAthletes.length === 0) {
         const msg = totalNumAthletes === 0
-          ? `â„¹ï¸  0 results â€” division may not exist in this season.`
-          : `âš ï¸  ${totalNumAthletes} total but 0 rows parsed.`;
+          ? `ℹ️  0 results — division may not exist in this season.`
+          : `⚠️  ${totalNumAthletes} total but 0 rows parsed.`;
         process.stdout.write(`   ${msg}\n`);
         break;
       }
@@ -472,7 +472,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
 
       // Stop if test limit reached
       if (ATHLETE_LIMIT && athletes.length >= ATHLETE_LIMIT) {
-        process.stdout.write(`\n   ðŸ›‘ Reached test limit of ${ATHLETE_LIMIT} athletes. Stopping pagination.`);
+        process.stdout.write(`\n   🛑 Reached test limit of ${ATHLETE_LIMIT} athletes. Stopping pagination.`);
         break;
       }
 
@@ -481,7 +481,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
       await sleep(600);
 
     } catch (err) {
-      console.warn(`\n   âš ï¸  Error page ${p}:`, err.message.slice(0, 150));
+      console.warn(`\n   ⚠️  Error page ${p}:`, err.message.slice(0, 150));
       break;
     }
   }
@@ -497,9 +497,9 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
   return { athletes: cleanAthletes, totalCount: totalNumAthletes || cleanAthletes.length };
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Helper: Update official total race attendance
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 async function updateRaceAthleteCountLive(raceId, count) {
   if (IS_TEST || !count) return;
   try {
@@ -512,9 +512,9 @@ async function updateRaceAthleteCountLive(raceId, count) {
   } catch (_) { }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Scrape athlete detail page for splits
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 async function scrapeAthleteDetail(page, athlete) {
   try {
     if (!athlete.detail_url) return athlete;
@@ -527,9 +527,9 @@ async function scrapeAthleteDetail(page, athlete) {
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Batch upsert to Supabase
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 function esc(val) {
   if (val === null || val === undefined) return 'NULL';
   return `'${String(val).replace(/'/g, "''")}'`;
@@ -537,7 +537,7 @@ function esc(val) {
 
 async function batchUpsert(athletes) {
   if (IS_TEST) {
-    console.log(`   ðŸ§ª [DRY-RUN] Would upsert ${athletes.length} athletes.`);
+    console.log(`   🧪 [DRY-RUN] Would upsert ${athletes.length} athletes.`);
     return true;
   }
 
@@ -604,9 +604,9 @@ async function batchUpsert(athletes) {
     `;
     try {
       await runQuery(sql);
-      process.stdout.write(`   ðŸ’¾ [${i + 1}â€“${Math.min(i + CHUNK, athletes.length)}/${athletes.length}] synced\r`);
+      process.stdout.write(`   💾 [${i + 1}–${Math.min(i + CHUNK, athletes.length)}/${athletes.length}] synced\r`);
     } catch (e) {
-      console.error(`\n   âŒ Chunk [${i}â€“${i + CHUNK}] failed:`, e.message.slice(0, 200));
+      console.error(`\n   ❌ Chunk [${i}–${i + CHUNK}] failed:`, e.message.slice(0, 200));
       allChunksOk = false;
     }
   }
@@ -660,7 +660,7 @@ async function initSyncLogTable() {
     `);
 
     if (FORCE_RESYNC) {
-      console.log('ðŸ§¹ [FORCE RESYNC] Resetting sync checkpoints to re-fetch 100% of athletes...');
+      console.log('🧹 [FORCE RESYNC] Resetting sync checkpoints to re-fetch 100% of athletes...');
       await runQuery(`TRUNCATE TABLE hyrox_sync_log;`);
     }
   } catch (_) { }
@@ -677,9 +677,9 @@ async function getSyncProgress() {
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Helper: Country mapper
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 function getCountryByCity(city) {
   const c = city.toLowerCase();
   if (c.includes('london') || c.includes('manchester') || c.includes('birmingham') || c.includes('glasgow') || c.includes('cardiff')) return { name: 'United Kingdom', code: 'GB' };
@@ -707,9 +707,9 @@ function getCountryByCity(city) {
   return { name: 'International', code: 'XX' };
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Master Verified Race Schedule (100% Official Tour Dates)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 const MASTER_RACE_DATES = {
   // 2025 Official Completed Dates
   'manchester-2025': { date: '2025-01-24', end_date: '2025-01-26', status: 'completed' },
@@ -748,9 +748,9 @@ const MASTER_RACE_DATES = {
   // 2026 Official Completed Dates (Seasons 25/26 & 26/27)
   'berlin-2026': { date: '2026-05-22', end_date: '2026-05-31', status: 'completed' },
   'london-olympia-2026': { date: '2026-05-29', end_date: '2026-05-31', status: 'completed' },
-  'buenos-aires-2026': { date: '2026-06-06', end_date: '2026-06-07', status: 'completed' },
+  'buenos-aires-2026': { date: '2026-06-13', end_date: '2026-06-14', status: 'completed' },
   'new-york-2026': { date: '2026-05-28', end_date: '2026-06-07', status: 'completed' },
-  'rimini-2026': { date: '2026-05-31', end_date: '2026-06-02', status: 'completed' },
+  'rimini-2026': { date: '2026-05-28', end_date: '2026-05-31', status: 'completed' },
   'johannesburg-2026': { date: '2026-02-28', end_date: '2026-03-01', status: 'completed' },
   'riga-2026': { date: '2026-05-09', end_date: '2026-05-10', status: 'completed' },
   'lyon-2026': { date: '2026-02-21', end_date: '2026-02-22', status: 'completed' },
@@ -808,9 +808,9 @@ const MASTER_RACE_DATES = {
   'stockholm-2026': { date: '2026-12-10', end_date: '2026-12-13', status: 'upcoming' },
 };
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // Helper: Dynamically discover official races from site
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
   const url = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -890,7 +890,7 @@ async function upsertRaceHeader(race) {
   try {
     await runQuery(sql);
   } catch (e) {
-    console.warn(`   âš ï¸ Race header upsert failed for ${race.id}:`, e.message.slice(0, 100));
+    console.warn(`   ⚠️ Race header upsert failed for ${race.id}:`, e.message.slice(0, 100));
   }
 }
 
@@ -916,26 +916,26 @@ async function updateRaceAthleteCount(raceId) {
           SET athletes_count = ${total}
           WHERE id = ${esc(raceId)};
         `);
-        console.log(`   ðŸ“Š Calculated authentic human attendance: ${total.toLocaleString()} athletes (saved to hyrox_races)`);
+        console.log(`   📊 Calculated authentic human attendance: ${total.toLocaleString()} athletes (saved to hyrox_races)`);
         return total;
       }
     }
   } catch (e) {
-    console.warn(`   âš ï¸ Could not update race total for ${raceId}:`, e.message.slice(0, 100));
+    console.warn(`   ⚠️ Could not update race total for ${raceId}:`, e.message.slice(0, 100));
   }
   return 0;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 // MAIN
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────
 async function main() {
   const seasonsToRun = FORCE_SEASON
     ? SEASONS.filter((s) => s.slug === FORCE_SEASON)
     : SEASONS;
 
   // Launch headless Chromium browser
-  console.log('ðŸŒ Launching Chromium browser (Stealth Mode)...');
+  console.log('🌐 Launching Chromium browser (Stealth Mode)...');
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -963,14 +963,14 @@ async function main() {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
   });
 
-  console.log('   âœ… Browser ready.\n');
+  console.log('   ✅ Browser ready.\n');
 
   // 1. Sync official calendar (exact dates, venues, images) - run on main job or standalone
   if (!FORCE_SEASON && !FORCE_RACE && !IS_TEST) {
     try {
       await syncOfficialCalendar(page);
     } catch (err) {
-      console.warn('âš ï¸  Calendar sync error (proceeding to results):', err.message);
+      console.warn('⚠️  Calendar sync error (proceeding to results):', err.message);
     }
   }
 
@@ -982,11 +982,11 @@ async function main() {
     await initSyncLogTable();
 
     for (const season of seasonsToRun) {
-      console.log(`\n${'â”€'.repeat(60)}`);
-      console.log(`ðŸ—“ï¸  Season: ${season.label} (${season.slug})`);
-      console.log('â”€'.repeat(60));
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`🗓️  Season: ${season.label} (${season.slug})`);
+      console.log('─'.repeat(60));
 
-      console.log(`ðŸ” Discovering official races from results.hyrox.com/${season.slug}...`);
+      console.log(`🔍 Discovering official races from results.hyrox.com/${season.slug}...`);
       const allSeasonRaces = await discoverOfficialRaces(page, season.slug, season.label);
       let seasonRaces = allSeasonRaces.filter(r => r.status === 'completed');
       
@@ -996,23 +996,23 @@ async function main() {
           r.city.toLowerCase().includes(FORCE_RACE.toLowerCase()) ||
           r.id.toLowerCase().includes(FORCE_RACE.toLowerCase())
         );
-        console.log(`   ðŸŽ¯ Filtered to specific race: "${FORCE_RACE}" (${seasonRaces.length} matching)`);
+        console.log(`   🎯 Filtered to specific race: "${FORCE_RACE}" (${seasonRaces.length} matching)`);
       } else {
-        console.log(`   âœ… Found ${allSeasonRaces.length} official races. Filtered to ${seasonRaces.length} completed races.\n`);
+        console.log(`   ✅ Found ${allSeasonRaces.length} official races. Filtered to ${seasonRaces.length} completed races.\n`);
       }
 
       if (seasonRaces.length === 0) {
-        console.log(`   â„¹ï¸  No matching races found for ${season.label} â€” skipping.\n`);
+        console.log(`   ℹ️  No matching races found for ${season.label} — skipping.\n`);
         continue;
       }
 
       for (const race of seasonRaces) {
-        console.log(`\nðŸŸï¸  Race: ${race.name} (${race.rawDropdownName})`);
-        console.log(`   ðŸ“… Date: ${race.date} | Status: ${race.status}`);
+        console.log(`\n🏟️  Race: ${race.name} (${race.rawDropdownName})`);
+        console.log(`   📅 Date: ${race.date} | Status: ${race.status}`);
         await upsertRaceHeader(race);
 
         if (race.status === 'upcoming' && !FORCE_RACE) {
-          console.log(`   â© Upcoming race â€” skipping division scraping (calendar already synced).`);
+          console.log(`   ⏩ Upcoming race — skipping division scraping (calendar already synced).`);
           continue;
         }
 
@@ -1024,34 +1024,34 @@ async function main() {
           : DIVISIONS;
 
         for (const div of divisionsToRun) {
-          console.log(`\n   ðŸ“‹ ${div.label}`);
+          console.log(`\n   📋 ${div.label}`);
 
           const { athletes, totalCount } = await scrapeDivisionLeaderboard(page, season.slug, race, div, MAX_PAGES);
           attendanceSum += (totalCount || 0);
-          console.log(`\n   âœ… ${athletes.length} athletes found`);
+          console.log(`\n   ✅ ${athletes.length} athletes found`);
 
           if (athletes.length === 0) {
-            console.log(`   â­ï¸  No results found in ${div.label} â€” checking next division.`);
+            console.log(`   ⏭️  No results found in ${div.label} — checking next division.`);
             continue;
           }
 
           if (IS_TEST) {
-            console.log('   ðŸ‘¤ Sample:',
+            console.log('   👤 Sample:',
               athletes.slice(0, 3).map((a) => `${a.overall_rank}. ${a.full_name} (${a.total_time})`).join(' | '),
             );
             try {
               const { writeFileSync } = await import('fs');
               writeFileSync('athletes_sample.json', JSON.stringify(athletes, null, 2));
-              console.log(`   ðŸ’¾ Saved ${athletes.length} athletes to athletes_sample.json (locally)`);
+              console.log(`   💾 Saved ${athletes.length} athletes to athletes_sample.json (locally)`);
             } catch (_) {}
           }
 
           // Fetch splits for all athletes
           const splitsLimit = Math.min(DEEP_SPLITS_LIMIT, athletes.length);
           if (splitsLimit > 0) {
-            console.log(`   âš¡ Fetching all 17 splits for 100% of athletes (${splitsLimit} total)...`);
+            console.log(`   ⚡ Fetching all 17 splits for 100% of athletes (${splitsLimit} total)...`);
             for (let i = 0; i < splitsLimit; i++) {
-              process.stdout.write(`   âš¡ [${i + 1}/${splitsLimit}] ${athletes[i].full_name}...\r`);
+              process.stdout.write(`   ⚡ [${i + 1}/${splitsLimit}] ${athletes[i].full_name}...\r`);
               athletes[i] = await scrapeAthleteDetail(page, athletes[i]);
             }
           }
@@ -1063,7 +1063,7 @@ async function main() {
             totalAthletes += athletes.length;
             totalSplits += splitsLimit;
           } else {
-            console.warn(`   âš ï¸ ${div.label} partially failed â€” will retry this division next run.`);
+            console.warn(`   ⚠️ ${div.label} partially failed — will retry this division next run.`);
           }
 
           await sleep(300);
@@ -1078,21 +1078,21 @@ async function main() {
     }
   } finally {
     await browser.close();
-    console.log('\nðŸŒ Browser closed.');
+    console.log('\n🌐 Browser closed.');
   }
 
   console.log('\n' + '='.repeat(68));
-  console.log('  ðŸŽ‰ Sync Complete!');
-  console.log(`  ðŸ‘¤ Athletes upserted : ${totalAthletes.toLocaleString()}`);
-  console.log(`  âš¡ Splits fetched    : ${totalSplits.toLocaleString()}`);
-  console.log(`  ðŸŸï¸  Races processed   : ${racesSummary.length}`);
-  if (IS_TEST) console.log('  ðŸ§ª DRY-RUN â€” nothing written to DB.');
+  console.log('  🎉 Sync Complete!');
+  console.log(`  👤 Athletes upserted : ${totalAthletes.toLocaleString()}`);
+  console.log(`  ⚡ Splits fetched    : ${totalSplits.toLocaleString()}`);
+  console.log(`  🏟️  Races processed   : ${racesSummary.length}`);
+  if (IS_TEST) console.log('  🧪 DRY-RUN — nothing written to DB.');
   console.log('='.repeat(68));
-  racesSummary.forEach((r) => console.log(`   â€¢ ${r.name}: ${r.athletes} athletes`));
+  racesSummary.forEach((r) => console.log(`   • ${r.name}: ${r.athletes} athletes`));
 }
 
 main().catch((err) => {
-  console.error('\nðŸ’¥ Fatal:', err.message);
+  console.error('\n💥 Fatal:', err.message);
   process.exit(1);
 });
 
