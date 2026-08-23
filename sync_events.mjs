@@ -207,6 +207,24 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Parse splits from athlete detail page HTML
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function timeToSeconds(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return 0;
+  const parts = timeStr.trim().split(':').map(Number);
+  if (parts.some(isNaN)) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
+function secondsToTime(seconds) {
+  if (isNaN(seconds) || seconds < 0) return null;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 function parseSplits(html) {
   const rowRegex = /<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
   const tableData = {};
@@ -252,7 +270,7 @@ function parseSplits(html) {
   if (rankMW && !isNaN(parseInt(rankMW, 10))) metaUpdates.gender_rank = parseInt(rankMW, 10);
   if (rankAG && !isNaN(parseInt(rankAG, 10))) metaUpdates.age_group_rank = parseInt(rankAG, 10);
 
-  return {
+  const res = {
     ...metaUpdates,
     run_1: getSplit('Running 1'),
     skierg: getSplit('SkiErg'),
@@ -272,6 +290,27 @@ function parseSplits(html) {
     wall_balls: getSplit('Wall Balls'),
     roxzone: getSplit('Roxzone'),
   };
+
+  // If roxzone is missing or dash, calculate mathematically from Total Time - (8 Runs + 8 Workouts)
+  if (!res.roxzone || res.roxzone === '–' || res.roxzone === '-') {
+    const totalSec = timeToSeconds(tableData['Overall Time'] || tableData['Total'] || tableData['Finish Time']);
+    const splits = [
+      res.run_1, res.skierg, res.run_2, res.sled_push,
+      res.run_3, res.sled_pull, res.run_4, res.burpee_jumps,
+      res.run_5, res.rowing, res.run_6, res.farmers_carry,
+      res.run_7, res.sandbag_lunges, res.run_8, res.wall_balls
+    ].map(timeToSeconds);
+
+    if (totalSec > 0 && splits.every(s => s > 0)) {
+      const sumSplits = splits.reduce((a, b) => a + b, 0);
+      const diff = totalSec - sumSplits;
+      if (diff >= 0 && diff < totalSec) {
+        res.roxzone = secondsToTime(diff);
+      }
+    }
+  }
+
+  return res;
 }
 
 // Scrape leaderboard by interacting with Mika Timing form
