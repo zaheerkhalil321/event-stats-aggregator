@@ -208,24 +208,42 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
 // Parse splits from athlete detail page HTML
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function parseSplits(html) {
+  const rowRegex = /<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
+  const tableData = {};
+  let rowMatch;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const key = rowMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+    const val = rowMatch[2].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+    if (key && val) {
+      tableData[key] = val;
+    }
+  }
+
+  const getVal = (...keys) => {
+    for (const k of keys) {
+      for (const [tableKey, tableVal] of Object.entries(tableData)) {
+        if (tableKey.toLowerCase().includes(k.toLowerCase()) && tableVal && tableVal !== '–' && tableVal !== '-' && tableVal !== '—') {
+          return tableVal;
+        }
+      }
+    }
+    return null;
+  };
+
   const getSplit = (keyword) => {
+    const fromTable = getVal(keyword);
+    if (fromTable) return fromTable;
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`${escaped}[\\s\\S]{0,300}?(\\d{1,2}:\\d{2}(?::\\d{2})?)`, 'i');
     const m = html.match(re);
     return m ? m[1] : null;
   };
 
-  const getMeta = (labelRegex) => {
-    const m = html.match(new RegExp(`<t[hd][^>]*>${labelRegex.source}[^<]*<\\/t[hd]>\\s*<t[hd][^>]*>([^<]+)<\\/t[hd]>`, 'i'))
-           || html.match(new RegExp(`${labelRegex.source}[\\s\\S]{0,100}?<td[^>]*>([^<]+)<\\/td>`, 'i'));
-    return m ? m[1].replace(/&nbsp;/g, ' ').trim() : null;
-  };
-
-  const bib = getMeta(/Bib\s*Number|Startnummer|Bib/i);
-  const ageGroup = getMeta(/Age\s*Group|Altersklasse|AK/i);
-  const nat = getMeta(/Nat(?:ionality)?|Nation|Country/i);
-  const rankMW = getMeta(/Rank.*?[MW]|Gender\s*Rank/i);
-  const rankAG = getMeta(/Rank.*?AG|Age\s*Group\s*Rank/i);
+  const bib = getVal('Bib Number', 'Startnummer', 'Bib');
+  const ageGroup = getVal('Age Group', 'Altersklasse', 'AK');
+  const nat = getVal('Nat', 'Nation', 'Country');
+  const rankMW = getVal('Rank (M/W)', 'Gender Rank');
+  const rankAG = getVal('Rank (AG)', 'Age Group Rank');
 
   const metaUpdates = {};
   if (bib && bib !== '–' && bib !== '-') metaUpdates.bib_number = bib;
@@ -237,19 +255,19 @@ function parseSplits(html) {
   return {
     ...metaUpdates,
     run_1: getSplit('Running 1'),
-    skierg: getSplit('1000m SkiErg'),
+    skierg: getSplit('SkiErg'),
     run_2: getSplit('Running 2'),
     sled_push: getSplit('Sled Push'),
     run_3: getSplit('Running 3'),
     sled_pull: getSplit('Sled Pull'),
     run_4: getSplit('Running 4'),
-    burpee_jumps: getSplit('Burpee Broad Jump'),
+    burpee_jumps: getSplit('Burpee'),
     run_5: getSplit('Running 5'),
-    rowing: getSplit('1000m Rowing'),
+    rowing: getSplit('Row'),
     run_6: getSplit('Running 6'),
-    farmers_carry: getSplit('Farmers Carry'),
+    farmers_carry: getSplit('Farmers'),
     run_7: getSplit('Running 7'),
-    sandbag_lunges: getSplit('Sandbag Lunges'),
+    sandbag_lunges: getSplit('Sandbag'),
     run_8: getSplit('Running 8'),
     wall_balls: getSplit('Wall Balls'),
     roxzone: getSplit('Roxzone'),
@@ -542,13 +560,24 @@ async function updateRaceAthleteCountLive(raceId, count) {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Scrape athlete detail page for splits
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-async function scrapeAthleteDetail(page, athlete) {
+async function scrapeAthleteDetail(page, athlete, linkLocator) {
   try {
-    if (!athlete.detail_url) return athlete;
-    await page.goto(athlete.detail_url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await page.waitForSelector('.detail-box, .f-list_ranking, table, [class*="box"]', { timeout: 3000 }).catch(() => { });
-    const html = await page.content();
-    return { ...athlete, ...parseSplits(html) };
+    if (linkLocator) {
+      await linkLocator.click();
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(1000);
+      const html = await page.content();
+      const splitsAndMeta = parseSplits(html);
+      await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
+      await page.waitForTimeout(500);
+      return { ...athlete, ...splitsAndMeta };
+    } else if (athlete.detail_url) {
+      await page.goto(athlete.detail_url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.waitForSelector('.detail-box, .f-list_ranking, table, [class*="box"]', { timeout: 3000 }).catch(() => { });
+      const html = await page.content();
+      return { ...athlete, ...parseSplits(html) };
+    }
+    return athlete;
   } catch (e) {
     return athlete;
   }
@@ -1077,13 +1106,15 @@ async function main() {
             continue;
           }
 
-          // Fetch splits for all athletes
+          // Fetch splits and rich profile metadata for all athletes
           const splitsLimit = Math.min(DEEP_SPLITS_LIMIT, athletes.length);
           if (splitsLimit > 0) {
-            console.log(`   âš¡ Fetching all 17 splits for 100% of athletes (${splitsLimit} total)...`);
+            console.log(`   ⚡ Fetching all 17 splits & profile details for ${splitsLimit} athletes...`);
+            const links = page.locator('a[href*="content=detail"]');
             for (let i = 0; i < splitsLimit; i++) {
-              process.stdout.write(`   âš¡ [${i + 1}/${splitsLimit}] ${athletes[i].full_name}...\r`);
-              athletes[i] = await scrapeAthleteDetail(page, athletes[i]);
+              process.stdout.write(`   ⚡ [${i + 1}/${splitsLimit}] ${athletes[i].full_name}...\r`);
+              const linkLocator = i < await links.count() ? links.nth(i) : null;
+              athletes[i] = await scrapeAthleteDetail(page, athletes[i], linkLocator);
             }
           }
 
