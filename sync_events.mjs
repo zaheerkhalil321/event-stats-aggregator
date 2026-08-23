@@ -172,8 +172,16 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
     if (!rankMatch && !timeMatch) continue;
 
     const rawDetailHref = linkMatch[1].replace(/&amp;/g, '&');
-    const detailUrl = rawDetailHref.startsWith('http')
+    const slug = seasonSlug || 'season-7';
+    const cleanHref = rawDetailHref.startsWith('/') ? rawDetailHref.slice(1) : rawDetailHref;
+    let detailUrl = rawDetailHref.startsWith('http')
       ? rawDetailHref
+      : `https://results.hyrox.com/${slug}/${cleanHref}`;
+
+    if (!detailUrl.includes('event_main_group=') && rawDropdownName) {
+      detailUrl += (detailUrl.includes('?') ? '&' : '?') + `event_main_group=${encodeURIComponent(rawDropdownName)}`;
+    }
+
       : `https://results.hyrox.com${rawDetailHref.startsWith('/') ? '' : '/'}${rawDetailHref}`;
 
     const fullName = linkMatch[2].trim();
