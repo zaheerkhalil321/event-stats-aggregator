@@ -202,12 +202,59 @@ function parseAthletes(html, raceId, division, gender) {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function parseSplits(html) {
   const getSplit = (keyword) => {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\function parseSplits(html) {
+  const getSplit = (keyword) => {
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`${escaped}[\\s\\S]{0,300}?(\\d{1,2}:\\d{2}(?::\\d{2})?)`, 'i');
     const m = html.match(re);
     return m ? m[1] : null;
   };
   return {
+    run_1: getSplit('Running 1'),
+    skierg: getSplit('1000m SkiErg'),
+    run_2: getSplit('Running 2'),
+    sled_push: getSplit('Sled Push'),
+    run_3: getSplit('Running 3'),
+    sled_pull: getSplit('Sled Pull'),
+    run_4: getSplit('Running 4'),
+    burpee_jumps: getSplit('Burpee Broad Jump'),
+    run_5: getSplit('Running 5'),
+    rowing: getSplit('1000m Rowing'),
+    run_6: getSplit('Running 6'),
+    farmers_carry: getSplit('Farmers Carry'),
+    run_7: getSplit('Running 7'),
+    sandbag_lunges: getSplit('Sandbag Lunges'),
+    run_8: getSplit('Running 8'),
+    wall_balls: getSplit('Wall Balls'),
+    roxzone: getSplit('Roxzone'),
+  };
+}');
+    const re = new RegExp(`${escaped}[\\s\\S]{0,300}?(\\d{1,2}:\\d{2}(?::\\d{2})?)`, 'i');
+    const m = html.match(re);
+    return m ? m[1] : null;
+  };
+
+  const getMeta = (labelRegex) => {
+    const m = html.match(new RegExp(`<t[hd][^>]*>${labelRegex.source}[^<]*<\\/t[hd]>\\s*<t[hd][^>]*>([^<]+)<\\/t[hd]>`, 'i'))
+           || html.match(new RegExp(`${labelRegex.source}[\\s\\S]{0,100}?<td[^>]*>([^<]+)<\\/td>`, 'i'));
+    return m ? m[1].replace(/&nbsp;/g, ' ').trim() : null;
+  };
+
+  const bib = getMeta(/Bib\s*Number|Startnummer|Bib/i);
+  const ageGroup = getMeta(/Age\s*Group|Altersklasse|AK/i);
+  const nat = getMeta(/Nat(?:ionality)?|Nation|Country/i);
+  const rankMW = getMeta(/Rank\s*\\(M\\/W\\)|Gender\s*Rank/i);
+  const rankAG = getMeta(/Rank\s*\\(AG\\)|Age\s*Group\s*Rank/i);
+
+  const metaUpdates = {};
+  if (bib && bib !== '–' && bib !== '-') metaUpdates.bib_number = bib;
+  if (ageGroup && ageGroup !== '–' && ageGroup !== '-') metaUpdates.age_group = ageGroup;
+  if (nat && nat !== '–' && nat !== '-' && nat !== 'XX') metaUpdates.nationality = nat;
+  if (rankMW && !isNaN(parseInt(rankMW, 10))) metaUpdates.gender_rank = parseInt(rankMW, 10);
+  if (rankAG && !isNaN(parseInt(rankAG, 10))) metaUpdates.age_group_rank = parseInt(rankAG, 10);
+
+  return {
+    ...metaUpdates,
     run_1: getSplit('Running 1'),
     skierg: getSplit('1000m SkiErg'),
     run_2: getSplit('Running 2'),
