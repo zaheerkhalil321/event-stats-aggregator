@@ -182,7 +182,6 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
       detailUrl += (detailUrl.includes('?') ? '&' : '?') + `event_main_group=${encodeURIComponent(rawDropdownName)}`;
     }
 
-      : `https://results.hyrox.com${rawDetailHref.startsWith('/') ? '' : '/'}${rawDetailHref}`;
 
     const fullName = linkMatch[2].trim();
     const dedupKey = `${fullName.toLowerCase()}:::${detailUrl}`;
