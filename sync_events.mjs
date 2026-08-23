@@ -199,7 +199,7 @@ function parseAthletes(html, raceId, division, gender) {
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Parse splits from athlete detail page HTML
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function parseSplits(html) {
   const getSplit = (keyword) => {
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -249,7 +249,292 @@ function parseSplits(html) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// Scrape leaderboard by interacting with Mika Timing form
+// (URL params alone don't work â€” the site needs form submit)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) {
+  const athletes = [];
+  const listUrl = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
+  let targetPages = maxPages || 99999;
+  let totalNumAthletes = 0;
+  let lastPageSignature = '';
+
+  for (let p = 1; p <= targetPages; p++) {
+    process.stdout.write(`   ðŸ“¥ [${div.label}] Page ${p}${targetPages < 50000 ? '/' + targetPages : ''} (${athletes.length} loaded)\r`);
+
+    try {
+      // On page 1: ensure we are on the list form, select fields, and submit
+      if (p === 1) {
+        const currentUrl = page.url();
+        const hasLegacyForm = await page.locator('select[name="event_main_group"]').isVisible().catch(() => false);
+        const hasModernForm = await page.locator('select[name="event"]').isVisible().catch(() => false);
+
+        if (!currentUrl.includes(seasonSlug) || (!hasLegacyForm && !hasModernForm)) {
+          await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await page.waitForSelector('select[name="event_main_group"], select[name="event"]', { timeout: 6000 }).catch(() => { });
+        }
+
+        // Wait up to 5 seconds for either select to appear
+        await Promise.any([
+          page.waitForSelector('select[name="event"]', { timeout: 5000 }).catch(() => {}),
+          page.waitForSelector('select[name="event_main_group"]', { timeout: 5000 }).catch(() => {})
+        ]);
+        const isModern = await page.locator('select[name="event"]').isVisible().catch(() => false);
+
+        if (isModern) {
+          // Season 8+ modern UI with <optgroup>
+          const eventSelect = page.locator('select[name="event"]');
+          if (await eventSelect.isVisible().catch(() => false)) {
+            const targetValue = await page.evaluate(({ cityName, divEvent }) => {
+              const select = document.querySelector('select[name="event"]');
+              if (!select) return null;
+              const optgroups = Array.from(select.querySelectorAll('optgroup'));
+              const og = optgroups.find(g => {
+                const label = (g.getAttribute('label') || '').toLowerCase();
+                const c = cityName.toLowerCase().trim();
+                if (label.includes(c)) return true;
+                const cityParts = c.split(' ').filter(p => p.length > 2);
+                return cityParts.length > 0 && cityParts.every(part => label.includes(part));
+              });
+              if (!og) return null;
+
+              const options = Array.from(og.querySelectorAll('option'));
+              const expectedEvent = divEvent.toUpperCase();
+              
+              // 1. Multi-day Mega-Events (e.g. New York, Berlin): Strict OVERALL match (exact division before OVERALL)
+              const overallOpt = options.find(o => {
+                const t = o.text.toUpperCase().trim();
+                const isOverall = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
+                const beforeOverall = t.replace(/\s*[-â€“(]?\s*OVERALL\s*\)?$/i, '').trim();
+                return isOverall && beforeOverall === expectedEvent;
+              });
+              if (overallOpt) return overallOpt.value;
+
+              // 2. Standard Single-Weekend Races: Exact Match
+              const exactOpt = options.find(o => o.text.toUpperCase().trim() === expectedEvent);
+              if (exactOpt) return exactOpt.value;
+
+              // 3. Fallback: startsWith with exact separator or boundary (strictly avoiding "HYROX" matching "HYROX PRO")
+              const fallbackOpt = options.find(o => {
+                const t = o.text.toUpperCase().trim();
+                return (
+                  t === expectedEvent ||
+                  t.startsWith(`${expectedEvent} -`) ||
+                  t.startsWith(`${expectedEvent} â€“`) ||
+                  t.startsWith(`${expectedEvent} (`)
+                );
+              });
+              
+              return fallbackOpt ? fallbackOpt.value : null;
+            }, { cityName: race.city, divEvent: div.event });
+
+            if (targetValue) {
+              // Inject hidden search[sex] input BEFORE selecting event (since selectOption triggers submit on S8)
+              if (div.sex !== '%') {
+                await page.evaluate((sex) => {
+                  const form = document.querySelector('form#lbglobal, form[name="lbglobal"]');
+                  if (form) {
+                    let input = form.querySelector('input[name="search[sex]"]');
+                    if (!input) {
+                      input = document.createElement('input');
+                      input.type = 'hidden';
+                      input.name = 'search[sex]';
+                      form.appendChild(input);
+                    }
+                    input.value = sex;
+                  }
+                }, div.sex);
+              }
+
+              await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+                eventSelect.selectOption({ value: targetValue }, { timeout: 4000 }).catch(() => {})
+              ]);
+              await page.waitForTimeout(1000);
+            } else {
+              console.log(`   â­ï¸  [${div.label}] Not found in dropdown â€” skipping.`);
+              break;
+            }
+          } else {
+             console.log(`   â­ï¸  [${div.label}] Form event select not found â€” skipping.`);
+             break;
+          }
+
+          // No need to look for visual sex select in modern UI, we injected it above.
+        } else {
+          // Legacy Season 7 UI (event_main_group & search[event])
+          const mainGroupSelect = page.locator('select[name="event_main_group"]');
+          if (await mainGroupSelect.isVisible().catch(() => false)) {
+            const groupValue = await page.evaluate(({ cityName, raceName }) => {
+              const select = document.querySelector('select[name="event_main_group"]');
+              if (!select) return null;
+              const options = Array.from(select.options);
+              const opt = options.find(o => {
+                const text = o.text.toLowerCase();
+                return text.includes(cityName.toLowerCase()) || (raceName && text.includes(raceName.toLowerCase()));
+              });
+              return opt ? opt.value : null;
+            }, { cityName: race.city, raceName: race.name });
+
+            if (groupValue) {
+              await mainGroupSelect.selectOption(groupValue, { timeout: 3000 }).catch(() => { });
+              await page.waitForTimeout(1000);
+            }
+          }
+
+          if (div.sex !== '%') {
+            const sexSelect = page.locator('select[name="search[sex]"]');
+            if (await sexSelect.isVisible().catch(() => false)) {
+              await sexSelect.selectOption(div.sex, { timeout: 2000 }).catch(() => { });
+            }
+          }
+
+          const numSelect = page.locator('select[name="num_results"]');
+          if (await numSelect.isVisible().catch(() => false)) {
+            await numSelect.selectOption('100', { timeout: 2000 }).catch(() => { });
+          }
+
+          const eventSelect = page.locator('select[name="search[event]"]');
+          if (await eventSelect.isVisible().catch(() => false)) {
+            await eventSelect.selectOption({ value: div.event }, { timeout: 2000 }).catch(async () => {
+              await eventSelect.selectOption({ label: div.event }, { timeout: 2000 }).catch(() => { });
+            });
+          }
+
+          const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
+          if (await submitBtn.isVisible().catch(() => false)) {
+            await Promise.all([
+              page.waitForResponse(res => res.url().includes('ajax') || res.url().includes('pid=list'), { timeout: 3000 }).catch(() => {}),
+              submitBtn.click()
+            ]);
+          } else {
+            await page.evaluate(() => {
+              const form = document.querySelector('form[name="form_lists_default"]');
+              if (form) form.submit();
+            });
+            await page.waitForTimeout(3000);
+          }
+        }
+
+        // Wait for results selector
+        await page.waitForSelector('.list-active, .list-info, .list-field, .f-list_ranking, tbody tr, p.alert', { timeout: 4000 }).catch(() => { });
+      } else {
+        // Subsequent pages: check if disabled first
+        const isNextDisabled = await page.locator('.pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
+        if (isNextDisabled) break;
+
+        let clicked = false;
+        const numPageLink = page.locator(`.pagination a:text-is("${p}"), a[data-silver*="page=${p}"], a[href*="page=${p}"]`).first();
+        if (await numPageLink.isVisible().catch(() => false)) {
+          await numPageLink.click();
+          clicked = true;
+        } else {
+          const nextBtn = page.locator('.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], a.silver-link:not(.disabled):has-text("â€º"), a.silver-link:not(.disabled):has-text("Â»"), a.silver-link:not(.disabled):has-text(">"), li.pages-nav-button a:has-text("â€º"), li.pages-nav-button a:has-text("Â»"), li.pages-nav-button a:has-text(">")').first();
+          if (await nextBtn.isVisible().catch(() => false)) {
+            await nextBtn.click();
+            clicked = true;
+          }
+        }
+
+        if (clicked) {
+          await page.waitForTimeout(800);
+          await page.waitForSelector('.list-active, .list-info, .list-field, tbody tr', { timeout: 5000 }).catch(() => { });
+        } else {
+          break; // No more pages link found
+        }
+      }
+
+      const html = await page.content();
+      const pageAthletes = parseAthletes(html, race.id, div.label, div.gender);
+
+      if (pageAthletes.length === 0) {
+        break;
+      }
+
+      // â”€â”€ Loop-Breaker: Check if page returned the exact same athletes as previous page â”€â”€
+      const currentSig = pageAthletes.map(a => `${a.full_name}|${a.bib_number || ''}|${a.overall_rank || ''}`).join(';;');
+      if (currentSig === lastPageSignature) {
+        // Reached end of pagination (Mika Timing repeats last page when clicking beyond end)
+        break;
+      }
+      lastPageSignature = currentSig;
+
+      // On Page 1: Read total official attendance if explicitly stated in info headers
+      if (p === 1) {
+        const totalText = await page.evaluate(() => {
+          const info = document.querySelector('.list-info, .str_num, .list-field-header');
+          return info?.innerText?.trim() || '';
+        }).catch(() => '');
+
+        const matchCount = totalText.match(/([\d,]+)\s+Result/i) 
+          || totalText.match(/Results?\s*[:\s]*([\d,]+)/i)
+          || totalText.match(/of\s+([\d,]+)/i);
+          
+        totalNumAthletes = matchCount ? parseInt(matchCount[1].replace(/,/g, ''), 10) : 0;
+
+        if (totalNumAthletes > 0 && pageAthletes.length > 0) {
+          const exactPages = Math.ceil(totalNumAthletes / pageAthletes.length);
+          targetPages = Math.min(exactPages, maxPages);
+        } else {
+          targetPages = maxPages; // Natural pagination: keeps going until no next-page link exists
+        }
+      }
+
+      if (pageAthletes.length === 0) {
+        const msg = totalNumAthletes === 0
+          ? `â„¹ï¸  0 results â€” division may not exist in this season.`
+          : `âš ï¸  ${totalNumAthletes} total but 0 rows parsed.`;
+        process.stdout.write(`   ${msg}\n`);
+        break;
+      }
+
+      athletes.push(...pageAthletes);
+
+      // Stop if test limit reached
+      if (ATHLETE_LIMIT && athletes.length >= ATHLETE_LIMIT) {
+        process.stdout.write(`\n   ðŸ›‘ Reached test limit of ${ATHLETE_LIMIT} athletes. Stopping pagination.`);
+        break;
+      }
+
+      // Stop if reached calculated target pages
+      if (p >= targetPages) break;
+      await sleep(600);
+
+    } catch (err) {
+      console.warn(`\n   âš ï¸  Error page ${p}:`, err.message.slice(0, 150));
+      break;
+    }
+  }
+
+  const uniqueMap = new Map();
+  for (const a of athletes) {
+    const key = `${a.full_name.toLowerCase()}:::${a.detail_url || a.bib_number || a.overall_rank}`;
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, a);
+    }
+  }
+  const cleanAthletes = Array.from(uniqueMap.values());
+  return { athletes: cleanAthletes, totalCount: totalNumAthletes || cleanAthletes.length };
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helper: Update official total race attendance
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function updateRaceAthleteCountLive(raceId, count) {
+  if (IS_TEST || !count) return;
+  try {
+    await runQuery(`
+      UPDATE hyrox_races
+      SET athletes_count = GREATEST(COALESCE(athletes_count, 0), ${count}),
+          updated_at = NOW()
+      WHERE id = '${raceId}';
+    `);
+  } catch (_) { }
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Scrape athlete detail page for splits
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function scrapeAthleteDetail(page, athlete) {
   try {
     if (!athlete.detail_url) return athlete;
@@ -785,6 +1070,17 @@ async function main() {
             continue;
           }
 
+          if (IS_TEST) {
+            console.log('   ðŸ‘¤ Sample:',
+              athletes.slice(0, 3).map((a) => `${a.overall_rank}. ${a.full_name} (${a.total_time})`).join(' | '),
+            );
+            try {
+              const { writeFileSync } = await import('fs');
+              writeFileSync('athletes_sample.json', JSON.stringify(athletes, null, 2));
+              console.log(`   ðŸ’¾ Saved ${athletes.length} athletes to athletes_sample.json (locally)`);
+            } catch (_) {}
+          }
+
           // Fetch splits for all athletes
           const splitsLimit = Math.min(DEEP_SPLITS_LIMIT, athletes.length);
           if (splitsLimit > 0) {
@@ -793,13 +1089,6 @@ async function main() {
               process.stdout.write(`   âš¡ [${i + 1}/${splitsLimit}] ${athletes[i].full_name}...\r`);
               athletes[i] = await scrapeAthleteDetail(page, athletes[i]);
             }
-          }
-          if (IS_TEST) {
-            try {
-              const { writeFileSync } = await import('fs');
-              writeFileSync('athletes_sample.json', JSON.stringify(athletes.slice(0, Math.max(50, splitsLimit)), null, 2));
-              console.log(`\n   💾 Saved enriched sample athletes to athletes_sample.json (with Bibs, Age Groups, Real Nations & Splits!)`);
-            } catch (_) {}
           }
 
           const success = await batchUpsert(athletes);
