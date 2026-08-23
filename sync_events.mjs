@@ -217,8 +217,8 @@ function parseSplits(html) {
   const bib = getMeta(/Bib\s*Number|Startnummer|Bib/i);
   const ageGroup = getMeta(/Age\s*Group|Altersklasse|AK/i);
   const nat = getMeta(/Nat(?:ionality)?|Nation|Country/i);
-  const rankMW = getMeta(/Rank\s*\\(M\\/W\\)|Gender\s*Rank/i);
-  const rankAG = getMeta(/Rank\s*\\(AG\\)|Age\s*Group\s*Rank/i);
+  const rankMW = getMeta(/Rank.*?[MW]|Gender\s*Rank/i);
+  const rankAG = getMeta(/Rank.*?AG|Age\s*Group\s*Rank/i);
 
   const metaUpdates = {};
   if (bib && bib !== '–' && bib !== '-') metaUpdates.bib_number = bib;
@@ -262,8 +262,8 @@ function parseSplits(html) {
   const bib = getMeta(/Bib\s*Number|Startnummer|Bib/i);
   const ageGroup = getMeta(/Age\s*Group|Altersklasse|AK/i);
   const nat = getMeta(/Nat(?:ionality)?|Nation|Country/i);
-  const rankMW = getMeta(/Rank\s*\\(M\\/W\\)|Gender\s*Rank/i);
-  const rankAG = getMeta(/Rank\s*\\(AG\\)|Age\s*Group\s*Rank/i);
+  const rankMW = getMeta(/Rank.*?[MW]|Gender\s*Rank/i);
+  const rankAG = getMeta(/Rank.*?AG|Age\s*Group\s*Rank/i);
 
   const metaUpdates = {};
   if (bib && bib !== '–' && bib !== '-') metaUpdates.bib_number = bib;
