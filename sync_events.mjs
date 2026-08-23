@@ -731,7 +731,7 @@ const MASTER_RACE_DATES = {
   'las-vegas-2025': { date: '2025-04-26', end_date: '2025-04-27', status: 'completed' },
   'berlin-2025': { date: '2025-05-16', end_date: '2025-05-18', status: 'completed' },
     'cardiff-2025': { date: '2025-05-02', end_date: '2025-05-04', status: 'completed' },
-    'riga-2025': { date: '2025-05-10', end_date: '2025-05-11', status: 'completed' },
+    'riga-2025': { date: '2025-05-31', end_date: '2025-05-31', status: 'completed' },
     'bangkok-2025': { date: '2025-03-29', end_date: '2025-03-30', status: 'completed' },
     'rimini-2025': { date: '2025-05-30', end_date: '2025-06-01', status: 'completed' },
     'new-york-2025': { date: '2025-05-30', end_date: '2025-06-01', status: 'completed' },
