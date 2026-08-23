@@ -151,7 +151,7 @@ function seasonBaseUrl(seasonSlug) {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Parse athlete rows from rendered HTML
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function parseAthletes(html, raceId, division, gender) {
+function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownName) {
   const athletes = [];
   const seen = new Set();
   const liRegex = /<li[^>]*class="[^"]*list-group-item[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
@@ -445,7 +445,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
       }
 
       const html = await page.content();
-      const pageAthletes = parseAthletes(html, race.id, div.label, div.gender);
+      const pageAthletes = parseAthletes(html, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
 
       if (pageAthletes.length === 0) {
         break;
