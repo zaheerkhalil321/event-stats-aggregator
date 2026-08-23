@@ -365,58 +365,134 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               const options = Array.from(og.querySelectorAll('option'));
               const expectedEvent = divEvent.toUpperCase();
               
-              // 1. Multi-day Mega-Events (e.g. New York, Berlin): Strict OVERALL match (exact division before OVERALL)
+              // 1. OVERALL aggregated option (single value covers all waves)
               const overallOpt = options.find(o => {
                 const t = o.text.toUpperCase().trim();
                 const isOverall = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
-                const beforeOverall = t.replace(/\s*[-â€“(]?\s*OVERALL\s*\)?$/i, '').trim();
+                const beforeOverall = t.replace(/\s*[-\u2013\u2014(]?\s*OVERALL\s*\)?$/i, '').trim();
                 return isOverall && beforeOverall === expectedEvent;
               });
-              if (overallOpt) return overallOpt.value;
+              if (overallOpt) return [overallOpt.value];
 
-              // 2. Standard Single-Weekend Races: Exact Match
+              // 2. Standard single-day exact match
               const exactOpt = options.find(o => o.text.toUpperCase().trim() === expectedEvent);
-              if (exactOpt) return exactOpt.value;
+              if (exactOpt) return [exactOpt.value];
 
-              // 3. Fallback: startsWith with exact separator or boundary (strictly avoiding "HYROX" matching "HYROX PRO")
-              const fallbackOpt = options.find(o => {
+              // 3. KEY FIX: Multi-Day Wave Collection
+              // Gathers ALL day variants: "HYROX - Saturday", "HYROX - Sunday", "HYROX - Week I"
+              // Fixes New York, Riga, Johannesburg, Berlin under-counting.
+              const waveOpts = options.filter(o => {
                 const t = o.text.toUpperCase().trim();
+                const isOv = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
+                if (isOv) return false;
                 return (
                   t === expectedEvent ||
                   t.startsWith(`${expectedEvent} -`) ||
-                  t.startsWith(`${expectedEvent} â€“`) ||
-                  t.startsWith(`${expectedEvent} (`)
+                  t.startsWith(`${expectedEvent} –`) ||
+                  t.startsWith(`${expectedEvent} (`) ||
+                  t.startsWith(`${expectedEvent} :`)
                 );
               });
-              
-              return fallbackOpt ? fallbackOpt.value : null;
+
+              return waveOpts.length > 0 ? waveOpts.map(o => o.value) : [];
             }, { cityName: race.city, divEvent: div.event });
 
-            if (targetValue) {
-              // Inject hidden search[sex] input BEFORE selecting event (since selectOption triggers submit on S8)
-              if (div.sex !== '%') {
-                await page.evaluate((sex) => {
-                  const form = document.querySelector('form#lbglobal, form[name="lbglobal"]');
-                  if (form) {
-                    let input = form.querySelector('input[name="search[sex]"]');
-                    if (!input) {
-                      input = document.createElement('input');
-                      input.type = 'hidden';
-                      input.name = 'search[sex]';
-                      form.appendChild(input);
+            if (targetValues && targetValues.length > 0) {
+              // Multi-Wave Loop:
+              // - Standard events: targetValues=[singleValue] → same as before
+              // - Multi-day events: targetValues=[Sat,Sun,WeekI...] → scrapes ALL waves
+              const waveAthletes = [];
+              let waveTotalCount = 0;
+
+              for (const waveValue of targetValues) {
+                if (div.sex !== '%') {
+                  await page.evaluate((sex) => {
+                    const form = document.querySelector('form#lbglobal, form[name="lbglobal"]');
+                    if (form) {
+                      let input = form.querySelector('input[name="search[sex]"]');
+                      if (!input) {
+                        input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'search[sex]';
+                        form.appendChild(input);
+                      }
+                      input.value = sex;
                     }
-                    input.value = sex;
+                  }, div.sex);
+                }
+
+                await Promise.all([
+                  page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+                  eventSelect.selectOption({ value: waveValue }, { timeout: 4000 }).catch(() => {})
+                ]);
+                await page.waitForTimeout(1000);
+
+                const waveLabel = await page.evaluate((v) => {
+                  const opt = document.querySelector(`select[name="event"] option[value="${v}"]`);
+                  return opt ? opt.text.trim() : v;
+                }, waveValue).catch(() => waveValue);
+                if (targetValues.length > 1) process.stdout.write(`\n      🌊 Wave: ${waveLabel}\n`);
+
+                // Paginate this wave
+                let wavePageSig = '';
+                let waveTargetPages = maxPages;
+                let waveP = 1;
+
+                while (waveP <= waveTargetPages) {
+                  if (waveP > 1) {
+                    const nxtDis = await page.locator('.pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
+                    if (nxtDis) break;
+                    let wClick = false;
+                    const numLnk = page.locator(`.pagination a:text-is("${waveP}"), a[data-silver*="page=${waveP}"], a[href*="page=${waveP}"]`).first();
+                    if (await numLnk.isVisible().catch(() => false)) { await numLnk.click(); wClick = true; }
+                    else {
+                      const nxtBtn = page.locator('.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], a.silver-link:not(.disabled):has-text("›"), a.silver-link:not(.disabled):has-text("»"), a.silver-link:not(.disabled):has-text(">"), li.pages-nav-button a:has-text("›"), li.pages-nav-button a:has-text("»"), li.pages-nav-button a:has-text(">")').first();
+                      if (await nxtBtn.isVisible().catch(() => false)) { await nxtBtn.click(); wClick = true; }
+                    }
+                    if (!wClick) break;
+                    await page.waitForTimeout(800);
+                    await page.waitForSelector('.list-active, .list-info, .list-field, tbody tr', { timeout: 5000 }).catch(() => {});
                   }
-                }, div.sex);
+
+                  const wHtml = await page.content();
+                  const wPA = parseAthletes(wHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                  if (wPA.length === 0) break;
+                  const wSig = wPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
+                  if (wSig === wavePageSig) break;
+                  wavePageSig = wSig;
+
+                  if (waveP === 1) {
+                    const wTxt = await page.evaluate(() => document.querySelector('.list-info, .str_num, .list-field-header')?.innerText?.trim() || '').catch(() => '');
+                    const mC = wTxt.match(/([\d,]+)\s+Result/i) || wTxt.match(/Results?[:\s]+([\d,]+)/i) || wTxt.match(/of\s+([\d,]+)/i);
+                    const wCnt = mC ? parseInt(mC[1].replace(/,/g, ''), 10) : 0;
+                    if (wCnt > 0) {
+                      waveTotalCount += wCnt;
+                      waveTargetPages = Math.min(Math.ceil(wCnt / Math.max(wPA.length, 1)), maxPages);
+                    }
+                  }
+
+                  waveAthletes.push(...wPA);
+                  process.stdout.write(`      📥 pg${waveP}: +${wPA.length} (wave: ${waveAthletes.length})\r`);
+                  if (ATHLETE_LIMIT && waveAthletes.length >= ATHLETE_LIMIT) break;
+                  if (waveP >= waveTargetPages) break;
+                  await sleep(600);
+                  waveP++;
+                }
+
+                // Go back to list page before next wave
+                if (targetValues.indexOf(waveValue) < targetValues.length - 1) {
+                  await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+                  await page.waitForSelector('select[name="event"]', { timeout: 6000 }).catch(() => {});
+                  await page.waitForTimeout(500);
+                }
               }
 
-              await Promise.all([
-                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-                eventSelect.selectOption({ value: targetValue }, { timeout: 4000 }).catch(() => {})
-              ]);
-              await page.waitForTimeout(1000);
+              // Merge all waves → athletes array, then exit outer page loop
+              athletes.push(...waveAthletes);
+              totalNumAthletes = waveTotalCount || waveAthletes.length;
+              break;
             } else {
-              console.log(`   â­ï¸  [${div.label}] Not found in dropdown â€” skipping.`);
+              console.log(`   ⭕  [${div.label}] Not found in dropdown – skipping.`);
               break;
             }
           } else {
