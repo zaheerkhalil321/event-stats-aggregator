@@ -1,15 +1,13 @@
 ﻿#!/usr/bin/env node
 /**
  * resume_partial_event.mjs
- * Smart Resume Scraper for Partial/Interrupted HYROX Races (e.g. Rimini 2026, Berlin 2025).
- *
- * Checks database for already completed divisions, skips them, and resumes
- * from the exact missing divisions using Playwright.
- *
- * Usage:
- *   node resume_partial_event.mjs rimini-2026
- *   node resume_partial_event.mjs berlin-2025
- *   SUPABASE_ACCESS_TOKEN=xxx node resume_partial_event.mjs rimini-2026
+ * Hardened Smart Resume Scraper for Partial HYROX Races (e.g. Rimini 2026, Berlin 2025).
+ * 
+ * Features:
+ *   • Overall-Priority Resolution (prevents day-specific duplicate overcounting)
+ *   • Maps only standard 12 divisions (PRO MEN/WOMEN, MEN/WOMEN, DOUBLES, RELAYS)
+ *   • Checkpoints via DB query to skip already completed divisions
+ *   • Zero hardcoded secrets (process.env.SUPABASE_ACCESS_TOKEN only)
  */
 
 import { chromium } from 'playwright';
@@ -31,7 +29,22 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-// ─── 2. Target Race & Season Resolution ─────────────────────────────────────────
+// Standard 12 HYROX Divisions & their matching targets
+const STANDARD_DIVISIONS = [
+  { label: 'HYROX PRO MEN', sex: 'M', event: 'HYROX PRO' },
+  { label: 'HYROX PRO WOMEN', sex: 'W', event: 'HYROX PRO' },
+  { label: 'HYROX MEN', sex: 'M', event: 'HYROX' },
+  { label: 'HYROX WOMEN', sex: 'W', event: 'HYROX' },
+  { label: 'HYROX PRO DOUBLES MEN', sex: 'M', event: 'HYROX PRO DOUBLES' },
+  { label: 'HYROX PRO DOUBLES WOMEN', sex: 'W', event: 'HYROX PRO DOUBLES' },
+  { label: 'HYROX DOUBLES MEN', sex: 'M', event: 'HYROX DOUBLES' },
+  { label: 'HYROX DOUBLES WOMEN', sex: 'W', event: 'HYROX DOUBLES' },
+  { label: 'HYROX DOUBLES MIXED', sex: 'X', event: 'HYROX DOUBLES' },
+  { label: 'HYROX TEAM RELAY MEN', sex: 'M', event: 'HYROX TEAM RELAY' },
+  { label: 'HYROX TEAM RELAY WOMEN', sex: 'W', event: 'HYROX TEAM RELAY' },
+  { label: 'HYROX TEAM RELAY MIXED', sex: 'X', event: 'HYROX TEAM RELAY' }
+];
+
 const RACE_ID = (process.argv[2] || 'rimini-2026').toLowerCase().trim();
 const SEASON = process.argv[4] || (RACE_ID.includes('2025') || RACE_ID.includes('25') ? 'season-7' : 'season-8');
 const SEASON_URL = `https://results.hyrox.com/${SEASON}/`;
@@ -73,14 +86,12 @@ function esc(val) {
   return `'${String(val).replace(/'/g, "''")}'`;
 }
 
-// ─── 3. Main Resume Execution ───────────────────────────────────────────────────
 async function main() {
-  console.log('='.repeat(65));
+  console.log('='.repeat(68));
   console.log(`⚡ HYROX SMART RESUME PIPELINE -> Target: [${RACE_ID}]`);
-  console.log(`🌐 Season URL: ${SEASON_URL} | Keyword: "${EVENT_SEARCH}"`);
-  console.log('='.repeat(65) + '\n');
+  console.log(`🌐 Season URL: ${SEASON_URL} | Search: "${EVENT_SEARCH}"`);
+  console.log('='.repeat(68) + '\n');
 
-  // Check already completed divisions in DB
   const existingStats = await runQuery(`
     SELECT division, count(*) as count 
     FROM hyrox_athlete_results 
@@ -92,13 +103,13 @@ async function main() {
     (existingStats || []).filter((r) => Number(r.count) > 0).map((r) => r.division.trim().toUpperCase())
   );
 
-  console.log('📊 Current database status for this race:');
+  console.log('📊 Current verified database status:');
   if (alreadyDoneDivisions.size === 0) {
-    console.log('   (Starting fresh - no completed divisions yet)\n');
+    console.log('   (Starting fresh - 0 completed divisions)\n');
   } else {
     alreadyDoneDivisions.forEach((d) => {
       const cnt = existingStats.find((s) => s.division.trim().toUpperCase() === d)?.count;
-      console.log(`   ✅ ${d}: ${cnt} athletes synced`);
+      console.log(`   ✅ ${d}: ${cnt} athletes`);
     });
     console.log('');
   }
@@ -116,7 +127,6 @@ async function main() {
     console.log(`🔍 Navigating to ${SEASON_URL}...`);
     await page.goto(SEASON_URL, { waitUntil: 'networkidle' });
 
-    // Match race in event_main_group dropdown
     const eventOptions = await page.$$eval('select[name="event_main_group"] option', (opts) =>
       opts.map((o) => ({ value: o.value, text: o.textContent.trim() }))
     );
@@ -141,37 +151,71 @@ async function main() {
       await page.waitForLoadState('networkidle');
     }
 
-    // Get available division options
-    const eventSelect = page.locator('select[name="event"]');
-    if (await eventSelect.count() === 0) {
-      console.error('❌ Could not locate division select element!');
-      return;
-    }
+    // Get all available division options from Mika Timing
+    const dropdownOptions = await page.$$eval('select[name="event"] option', (opts) =>
+      opts.map((o) => ({ value: o.value, text: o.textContent.trim() }))
+    );
 
-    const availableDivisions = await eventSelect.locator('option').allInnerTexts();
-    const divisionValues = await eventSelect.locator('option').evaluateAll((opts) => opts.map((o) => o.value));
+    console.log(`\n📋 Discovered ${dropdownOptions.length} raw division options. Resolving Overall-priority mappings...\n`);
 
-    console.log(`\n📋 Discovered ${availableDivisions.length} division options on Mika Timing:\n`);
+    for (const div of STANDARD_DIVISIONS) {
+      if (alreadyDoneDivisions.has(div.label.toUpperCase())) {
+        console.log(`⏩ [SKIP] "${div.label}" is already completed in DB.`);
+        continue;
+      }
 
-    for (let i = 0; i < availableDivisions.length; i++) {
-      const divName = availableDivisions[i].trim();
-      const divVal = divisionValues[i];
-      if (!divVal || !divName || divName.includes('Choose')) continue;
+      // ─── OVERALL-PRIORITY RESOLUTION ─────────────────────────────────────────
+      // 1. Check for multi-day Overall option (e.g. "HYROX - Overall" or "HYROX PRO - Overall")
+      const expectedEvent = div.event.toUpperCase();
+      let matchedVal = null;
+      let matchedText = null;
 
-      const normalizedName = divName.toUpperCase();
+      const overallOpt = dropdownOptions.find((o) => {
+        const t = o.text.toUpperCase().trim();
+        const isOverall = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
+        const beforeOverall = t.replace(/\s*[-–(]?\s*OVERALL\s*\)?$/i, '').trim();
+        return isOverall && beforeOverall === expectedEvent;
+      });
 
-      if (alreadyDoneDivisions.has(normalizedName)) {
-        console.log(`⏩ [SKIP] "${divName}" is already 100% completed in DB.`);
+      if (overallOpt) {
+        matchedVal = overallOpt.value;
+        matchedText = overallOpt.text;
+      } else {
+        // 2. Standard single-weekend exact match
+        const exactOpt = dropdownOptions.find((o) => o.text.toUpperCase().trim() === expectedEvent);
+        if (exactOpt) {
+          matchedVal = exactOpt.value;
+          matchedText = exactOpt.text;
+        }
+      }
+
+      if (!matchedVal) {
+        console.log(`⚠️  Division "${div.label}" not offered at this event.`);
         continue;
       }
 
       console.log(`\n-----------------------------------------------------------`);
-      console.log(`📥 [RESUMING] Scraping Division: "${divName}" (value: ${divVal})`);
+      console.log(`📥 [RESUMING] ${div.label} -> Mapped to: "${matchedText}" (Sex: ${div.sex})`);
       console.log(`-----------------------------------------------------------`);
 
-      await eventSelect.selectOption(divVal);
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(800);
+      // Select division
+      await page.selectOption('select[name="event"]', matchedVal);
+      await page.waitForTimeout(500);
+
+      // Select gender / sex if available
+      const sexSelect = page.locator('select[name="sex"]');
+      if (await sexSelect.count() > 0 && div.sex) {
+        try {
+          await sexSelect.selectOption(div.sex);
+          await page.waitForTimeout(400);
+        } catch (_) {}
+      }
+
+      const searchBtn = page.locator('input[type="submit"], button[type="submit"], #submit');
+      if (await searchBtn.count() > 0) {
+        await searchBtn.first().click();
+        await page.waitForLoadState('networkidle');
+      }
 
       let pageNum = 1;
       let totalAthletesForDiv = 0;
@@ -198,9 +242,10 @@ async function main() {
                 full_name: name,
                 nationality: nat,
                 age_group: ageGroup,
-                division: divName,
+                division: div.label, // Stored strictly with standard division name!
                 total_time: totalTime,
-                overall_rank: place
+                overall_rank: place,
+                gender: div.sex === 'W' ? 'F' : (div.sex === 'X' ? 'X' : 'M')
               });
             }
           } catch (_) {}
@@ -209,12 +254,13 @@ async function main() {
         if (athletesBatch.length > 0) {
           const rowSql = athletesBatch.map((a) => `(
             ${esc(a.race_id)}, ${esc(a.full_name)}, ${esc(a.nationality)},
-            ${esc(a.age_group)}, ${esc(a.division)}, ${esc(a.total_time)}, ${a.overall_rank ?? 'NULL'}
+            ${esc(a.gender)}, ${esc(a.age_group)}, ${esc(a.division)},
+            ${esc(a.total_time)}, ${a.overall_rank ?? 'NULL'}
           )`).join(',');
 
           await runQuery(`
             INSERT INTO hyrox_athlete_results (
-              race_id, full_name, nationality, age_group, division, total_time, overall_rank
+              race_id, full_name, nationality, gender, age_group, division, total_time, overall_rank
             ) VALUES ${rowSql}
             ON CONFLICT (race_id, full_name, division) DO UPDATE SET
               total_time = EXCLUDED.total_time,
@@ -226,10 +272,10 @@ async function main() {
           console.log(`   Page ${pageNum}: Synced ${athletesBatch.length} athletes.`);
         }
 
-        const nextBtn = page.locator('a:has-text(">"), a.next, .pagination-next a, [aria-label="Next"]');
+        const nextBtn = page.locator('a:has-text(">"), a.next, .pagination-next a');
         const hasNext = await nextBtn.count() > 0 && await nextBtn.first().isVisible();
 
-        if (hasNext && pageNum < 200) {
+        if (hasNext && pageNum < 250) {
           pageNum++;
           await nextBtn.first().click();
           await page.waitForLoadState('networkidle');
@@ -239,10 +285,10 @@ async function main() {
         }
       }
 
-      console.log(`✅ Completed Division "${divName}" -> Total ${totalAthletesForDiv} athletes synced.`);
+      console.log(`✅ Completed ${div.label} -> Synced ${totalAthletesForDiv} athletes.`);
     }
 
-    // Update overall athletes_count on hyrox_races
+    // Update verified total athletes count on hyrox_races
     const totalCountRes = await runQuery(`
       SELECT count(*) as total FROM hyrox_athlete_results WHERE race_id = ${esc(RACE_ID)};
     `);
