@@ -1,13 +1,24 @@
-﻿name: ⚡ Event Data Pipeline
+﻿name: 🚀 Event Data Pipeline
 
 on:
   schedule:
     # Run every Monday at 6:00 AM UTC (after weekend races)
     - cron: '0 6 * * 1'
 
-  # Allow manual trigger with optional dry-run and season filter
+  # Allow manual trigger with optional dry-run, season filter, or specific race resume
   workflow_dispatch:
     inputs:
+      race:
+        description: 'Target specific race ID to sync/resume (e.g. rimini-2026, berlin-2025, or leave blank for all)'
+        required: false
+        default: ''
+        type: string
+      season:
+        description: 'Dataset season to ingest (leave "all" for parallel matrix sync)'
+        required: false
+        default: 'all'
+        type: choice
+        options: ['all', 'season-7', 'season-8', 'season-9']
       dry_run:
         description: 'Dry run (no DB writes)?'
         required: false
@@ -20,25 +31,19 @@ on:
         default: 'false'
         type: choice
         options: ['false', 'true']
-      season:
-        description: 'Dataset season to ingest (leave "all" for parallel matrix sync)'
-        required: false
-        default: 'all'
-        type: choice
-        options: ['all', 'season-7', 'season-8']
 
 jobs:
   sync-matrix:
     name: Ingest ${{ matrix.season }} (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
         season: ['season-7', 'season-8']
 
     steps:
-      - name: 📥 Checkout repository
+      - name: 📦 Checkout repository
         uses: actions/checkout@v4
 
       - name: 🟢 Set up Node.js 22
@@ -46,19 +51,22 @@ jobs:
         with:
           node-version: '22'
 
-      - name: 📦 Install dependencies
+      - name: 📥 Install dependencies
         run: npm install
 
       - name: 🌐 Install Playwright Chromium browser
         run: npx playwright install chromium --with-deps
 
-      - name: 🔄 Execute Ingest for ${{ matrix.season }}
+      - name: ⚡ Execute Ingest for ${{ matrix.season }}
         if: github.event.inputs.season == 'all' || github.event.inputs.season == '' || github.event.inputs.season == null || github.event.inputs.season == matrix.season
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           FLAGS="--season ${{ matrix.season }}"
+          if [ -n "${{ github.event.inputs.race }}" ]; then
+            FLAGS="$FLAGS --race ${{ github.event.inputs.race }}"
+          fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             FLAGS="$FLAGS --test"
           fi
