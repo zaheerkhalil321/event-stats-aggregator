@@ -349,7 +349,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
           // Season 8+ modern UI with <optgroup>
           const eventSelect = page.locator('select[name="event"]');
           if (await eventSelect.isVisible().catch(() => false)) {
-            const targetValue = await page.evaluate(({ cityName, divEvent }) => {
+            const targetValues = await page.evaluate(({ cityName, divEvent }) => {
               const select = document.querySelector('select[name="event"]');
               if (!select) return null;
               const optgroups = Array.from(select.querySelectorAll('optgroup'));
