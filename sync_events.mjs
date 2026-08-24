@@ -928,7 +928,7 @@ const MASTER_RACE_DATES = {
   'new-york-2026': { date: '2026-05-28', end_date: '2026-06-07', status: 'completed' },
   'rimini-2026': { date: '2026-05-28', end_date: '2026-05-31', status: 'completed' },
   'johannesburg-2026': { date: '2026-02-28', end_date: '2026-03-01', status: 'completed' },
-  'riga-2026': { date: '2026-05-09', end_date: '2026-05-10', status: 'completed' },
+  'riga-2026': { date: '2026-05-30', end_date: '2026-05-31', status: 'completed' },
   'lyon-2026': { date: '2026-02-21', end_date: '2026-02-22', status: 'completed' },
   'barcelona-2026': { date: '2026-04-25', end_date: '2026-04-26', status: 'completed' },
   'heerenveen-2026': { date: '2026-04-18', end_date: '2026-04-19', status: 'completed' },
