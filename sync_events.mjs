@@ -80,10 +80,12 @@ const DIVISIONS = [
   { label: 'HYROX DOUBLES MIXED', sex: 'X', gender: 'X', event: 'HYROX DOUBLES' },
   { label: 'HYROX TEAM RELAY MEN', sex: 'M', gender: 'M', event: 'HYROX TEAM RELAY' },
   { label: 'HYROX TEAM RELAY WOMEN', sex: 'W', gender: 'F', event: 'HYROX TEAM RELAY' },
-  { label: 'HYROX TEAM RELAY MIXED', sex: 'X', gender: 'X', event: 'HYROX TEAM RELAY' }
+  { label: 'HYROX TEAM RELAY MIXED', sex: 'X', gender: 'X', event: 'HYROX TEAM RELAY' },
+  { label: 'HYROX ADAPTIVE MEN', sex: 'M', gender: 'M', event: 'HYROX ADAPTIVE' },
+  { label: 'HYROX ADAPTIVE WOMEN', sex: 'W', gender: 'F', event: 'HYROX ADAPTIVE' },
 ];
 
-const MAX_PAGES = 5000;             // Hard safety cap: 5000 pages Ã— 100 = 500,000 athletes max
+const MAX_PAGES = 5000;             // Hard safety cap: 5000 pages x 100 = 500,000 athletes max
 const splitsLimitArg = process.argv.find(arg => arg.startsWith('--splits='))?.split('=')[1]
                        || (process.argv.includes('--splits') ? process.argv[process.argv.indexOf('--splits') + 1] : null);
 const DEEP_SPLITS_LIMIT = splitsLimitArg ? (splitsLimitArg === 'all' || splitsLimitArg === 'Infinity' ? Infinity : parseInt(splitsLimitArg, 10)) : 50;
@@ -365,16 +367,11 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               const options = Array.from(og.querySelectorAll('option'));
               const expectedEvent = divEvent.toUpperCase();
               
-              // 1. OVERALL aggregated option (single value covers all waves)
-              const overallOpt = options.find(o => {
-                const t = o.text.toUpperCase().trim();
-                const isOverall = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
-                const beforeOverall = t.replace(/\s*[-\u2013\u2014(]?\s*OVERALL\s*\)?$/i, '').trim();
-                return isOverall && beforeOverall === expectedEvent;
-              });
-              if (overallOpt) return [overallOpt.value];
+              // NOTE: OVERALL options are intentionally skipped.
+              // Mika Timing's OVERALL page does not support sex filters (search[sex]=M/W),
+              // causing 0 results. We always collect individual day waves (Fri/Sat/Sun) below.
 
-              // 2. Standard single-day exact match
+              // 1. Standard single-day exact match
               const exactOpt = options.find(o => o.text.toUpperCase().trim() === expectedEvent);
               if (exactOpt) return [exactOpt.value];
 
