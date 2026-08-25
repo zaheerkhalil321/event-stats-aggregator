@@ -1054,8 +1054,8 @@ async function upsertRaceHeader(race) {
       city = EXCLUDED.city,
       country = EXCLUDED.country,
       country_code = EXCLUDED.country_code,
-      date = COALESCE(hyrox_races.date, EXCLUDED.date),
-      end_date = COALESCE(hyrox_races.end_date, EXCLUDED.end_date),
+      date = COALESCE(EXCLUDED.date, hyrox_races.date),
+      end_date = COALESCE(EXCLUDED.end_date, hyrox_races.end_date),
       season = EXCLUDED.season,
       status = EXCLUDED.status,
       updated_at = NOW();
