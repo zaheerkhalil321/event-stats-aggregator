@@ -926,53 +926,7 @@ const MASTER_RACE_DATES = {
   'world-championships-2025': { date: '2025-06-12', end_date: '2025-06-15', status: 'completed' },
   'brisbane-2025': { date: '2025-07-04', end_date: '2025-07-06', status: 'completed' },
   'sydney-2025': { date: '2025-07-18', end_date: '2025-07-20', status: 'completed' },
-  'melbourne-2025': { date: '2025-08-01', end_date: '2025-08-03', status: 'completed' },
-  'perth-2025': { date: '2025-08-08', end_date: '2025-08-10', status: 'completed' },
-  'singapore-2025': { date: '2025-08-29', end_date: '2025-08-31', status: 'completed' },
-  'hong-kong-2025': { date: '2025-09-12', end_date: '2025-09-14', status: 'completed' },
-  'incheon-2025': { date: '2025-09-26', end_date: '2025-09-28', status: 'completed' },
-  'madrid-2025': { date: '2025-10-17', end_date: '2025-10-19', status: 'completed' },
-  'birmingham-2025': { date: '2025-10-24', end_date: '2025-10-26', status: 'completed' },
-  'amsterdam-2025': { date: '2025-10-31', end_date: '2025-11-02', status: 'completed' },
-  'chicago-2025': { date: '2025-11-14', end_date: '2025-11-16', status: 'completed' },
-  'stockholm-2025': { date: '2025-12-05', end_date: '2025-12-07', status: 'completed' },
-
-  // 2026 Official Completed Dates (Seasons 25/26 & 26/27)
-  'berlin-2026': { date: '2026-05-22', end_date: '2026-05-31', status: 'completed' },
-  'london-olympia-2026': { date: '2026-05-29', end_date: '2026-05-31', status: 'completed' },
-  'buenos-aires-2026': { date: '2026-06-13', end_date: '2026-06-14', status: 'completed' },
-  'new-york-2026': { date: '2026-05-28', end_date: '2026-06-07', status: 'completed' },
-  'rimini-2026': { date: '2026-05-28', end_date: '2026-05-31', status: 'completed' },
-  'johannesburg-2026': { date: '2026-02-28', end_date: '2026-03-01', status: 'completed' },
-  'riga-2026': { date: '2026-05-30', end_date: '2026-05-31', status: 'completed' },
-  'lyon-2026': { date: '2026-02-21', end_date: '2026-02-22', status: 'completed' },
-  'barcelona-2026': { date: '2026-04-25', end_date: '2026-04-26', status: 'completed' },
-  'heerenveen-2026': { date: '2026-04-18', end_date: '2026-04-19', status: 'completed' },
-  'incheon-2026': { date: '2026-03-28', end_date: '2026-03-29', status: 'completed' },
   'ottawa-2026': { date: '2026-04-11', end_date: '2026-04-12', status: 'completed' },
-  'puebla-2026': { date: '2026-03-21', end_date: '2026-03-22', status: 'completed' },
-  'shanghai-2026': { date: '2026-04-11', end_date: '2026-04-12', status: 'completed' },
-  'helsinki-2026': { date: '2026-05-02', end_date: '2026-05-03', status: 'completed' },
-  'hong-kong-2026': { date: '2026-05-08', end_date: '2026-05-10', status: 'completed' },
-  'cardiff-2026': { date: '2026-03-14', end_date: '2026-03-15', status: 'completed' },
-  'lisboa-2026': { date: '2026-04-18', end_date: '2026-04-19', status: 'completed' },
-  'paris-gp-2026': { date: '2026-04-24', end_date: '2026-04-26', status: 'completed' },
-  'sao-paulo-2026': { date: '2026-03-07', end_date: '2026-03-08', status: 'completed' },
-  'warsaw-2026': { date: '2026-03-28', end_date: '2026-03-29', status: 'completed' },
-  'cologne-2026': { date: '2026-04-09', end_date: '2026-04-12', status: 'completed' },
-  'malaga-2026': { date: '2026-04-11', end_date: '2026-04-12', status: 'completed' },
-  'rotterdam-2026': { date: '2026-04-03', end_date: '2026-04-05', status: 'completed' },
-  'monterrey-2026': { date: '2026-02-21', end_date: '2026-02-22', status: 'completed' },
-  'brisbane-2026': { date: '2026-02-14', end_date: '2026-02-15', status: 'completed' },
-  'bengaluru-2026': { date: '2026-02-07', end_date: '2026-02-08', status: 'completed' },
-  'wuhan-2026': { date: '2026-01-17', end_date: '2026-01-18', status: 'completed' },
-  'miami-2026': { date: '2026-02-21', end_date: '2026-02-22', status: 'completed' },
-  'cape-town-1-2026': { date: '2026-02-07', end_date: '2026-02-08', status: 'completed' },
-  'bologna-2026': { date: '2026-01-31', end_date: '2026-02-01', status: 'completed' },
-  'singapore-2026': { date: '2026-01-24', end_date: '2026-01-25', status: 'completed' },
-  'houston-2026': { date: '2026-03-13', end_date: '2026-03-15', status: 'completed' },
-  'mechelen-2026': { date: '2026-03-06', end_date: '2026-03-08', status: 'completed' },
-  'bangkok-1-2026': { date: '2026-01-10', end_date: '2026-01-11', status: 'completed' },
   'beijing-2026': { date: '2026-01-10', end_date: '2026-01-11', status: 'completed' },
   'toulouse-2026': { date: '2026-02-14', end_date: '2026-02-15', status: 'completed' },
   'glasgow-2026': { date: '2026-03-06', end_date: '2026-03-08', status: 'completed' },
@@ -1089,18 +1043,20 @@ async function upsertRaceHeader(race) {
 async function updateRaceAthleteCount(raceId) {
   if (IS_TEST) return 0;
   try {
+    // Use hyrox_sync_log as source of truth for athlete counts.
+    // Do NOT count hyrox_athlete_results rows: Supabase anon key has a default
+    // page limit (~1000 rows) causing severe undercounting for large races (10k+).
     const res = await runQuery(`
-      SELECT division, COUNT(*) as c
-      FROM hyrox_athlete_results
-      WHERE race_id = ${esc(raceId)}
-      GROUP BY division;
+      SELECT division, athlete_count
+      FROM hyrox_sync_log
+      WHERE race_id = ${esc(raceId)};
     `);
     if (res && res.length > 0) {
       let total = 0;
       for (const row of res) {
         const u = (row.division || '').toUpperCase();
         const mult = u.includes('DOUBLES') ? 2 : (u.includes('RELAY') ? 4 : 1);
-        total += parseInt(row.c || 0, 10) * mult;
+        total += parseInt(row.athlete_count || 0, 10) * mult;
       }
       if (total > 0) {
         await runQuery(`
@@ -1108,12 +1064,12 @@ async function updateRaceAthleteCount(raceId) {
           SET athletes_count = ${total}
           WHERE id = ${esc(raceId)};
         `);
-        console.log(`   ðŸ“Š Calculated authentic human attendance: ${total.toLocaleString()} athletes (saved to hyrox_races)`);
+        console.log(`   📊 Calculated authentic human attendance: ${total.toLocaleString()} athletes (saved to hyrox_races)`);
         return total;
       }
     }
   } catch (e) {
-    console.warn(`   âš ï¸ Could not update race total for ${raceId}:`, e.message.slice(0, 100));
+    console.warn(`   ⚠️ Could not update race total for ${raceId}:`, e.message.slice(0, 100));
   }
   return 0;
 }
