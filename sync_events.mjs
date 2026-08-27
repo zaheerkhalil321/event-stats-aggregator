@@ -837,7 +837,13 @@ async function initSyncLogTable() {
 async function getSyncProgress() {
   if (IS_TEST || FORCE_RESYNC) return new Set();
   try {
-    const res = await runQuery(`SELECT race_id, division FROM hyrox_sync_log;`);
+    // Only honor checkpoints if the race actually has real athletes in the database
+    const res = await runQuery(`
+      SELECT l.race_id, l.division 
+      FROM hyrox_sync_log l
+      INNER JOIN hyrox_races r ON r.id = l.race_id
+      WHERE r.athletes_count > 100;
+    `);
     const keys = Array.isArray(res) ? res.map((r) => `${r.race_id}::${r.division}`) : [];
     return new Set(keys);
   } catch (_) {
