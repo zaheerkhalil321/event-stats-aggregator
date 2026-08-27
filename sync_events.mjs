@@ -83,6 +83,11 @@ const DIVISIONS = [
   { label: 'HYROX TEAM RELAY MIXED', sex: 'X', gender: 'X', event: 'HYROX TEAM RELAY' },
   { label: 'HYROX ADAPTIVE MEN', sex: 'M', gender: 'M', event: 'HYROX ADAPTIVE' },
   { label: 'HYROX ADAPTIVE WOMEN', sex: 'W', gender: 'F', event: 'HYROX ADAPTIVE' },
+  { label: 'HYROX CORPORATE RELAY MEN', sex: 'M', gender: 'M', event: 'HYROX CORPORATE RELAY' },
+  { label: 'HYROX CORPORATE RELAY WOMEN', sex: 'W', gender: 'F', event: 'HYROX CORPORATE RELAY' },
+  { label: 'HYROX CORPORATE RELAY MIXED', sex: 'X', gender: 'X', event: 'HYROX CORPORATE RELAY' },
+  { label: 'HYROX ELITE MEN', sex: 'M', gender: 'M', event: 'HYROX ELITE' },
+  { label: 'HYROX ELITE WOMEN', sex: 'W', gender: 'F', event: 'HYROX ELITE' },
 ];
 
 const MAX_PAGES = 5000;             // Hard safety cap: 5000 pages x 100 = 500,000 athletes max
@@ -402,10 +407,10 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               let waveTotalCount = 0;
 
               for (const waveValue of targetValues) {
-                if (div.sex !== '%') {
-                  await page.evaluate((sex) => {
-                    const form = document.querySelector('form#lbglobal, form[name="lbglobal"]');
-                    if (form) {
+                await page.evaluate(({ sex }) => {
+                  const form = document.querySelector('form#lbglobal, form[name="lbglobal"]');
+                  if (form) {
+                    if (sex && sex !== '%') {
                       let input = form.querySelector('input[name="search[sex]"]');
                       if (!input) {
                         input = document.createElement('input');
@@ -415,8 +420,16 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                       }
                       input.value = sex;
                     }
-                  }, div.sex);
-                }
+                    let numInput = form.querySelector('input[name="num_results"]');
+                    if (!numInput) {
+                      numInput = document.createElement('input');
+                      numInput.type = 'hidden';
+                      numInput.name = 'num_results';
+                      form.appendChild(numInput);
+                    }
+                    numInput.value = '100';
+                  }
+                }, { sex: div.sex });
 
                 await Promise.all([
                   page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
@@ -940,7 +953,7 @@ const MASTER_RACE_DATES = {
   'puebla-2026': { date: '2026-03-21', end_date: '2026-03-22', status: 'completed' },
   'shanghai-2026': { date: '2026-04-11', end_date: '2026-04-12', status: 'completed' },
   'helsinki-2026': { date: '2026-05-02', end_date: '2026-05-03', status: 'completed' },
-  'hong-kong-2026': { date: '2026-05-09', end_date: '2026-05-10', status: 'completed' },
+  'hong-kong-2026': { date: '2026-05-08', end_date: '2026-05-10', status: 'completed' },
   'cardiff-2026': { date: '2026-03-14', end_date: '2026-03-15', status: 'completed' },
   'lisboa-2026': { date: '2026-04-18', end_date: '2026-04-19', status: 'completed' },
   'paris-gp-2026': { date: '2026-04-24', end_date: '2026-04-26', status: 'completed' },
