@@ -1111,13 +1111,13 @@ async function upsertRaceHeader(race) {
       country = EXCLUDED.country,
       country_code = EXCLUDED.country_code,
       date = CASE 
-        WHEN EXCLUDED.date NOT LIKE '%12-31' THEN EXCLUDED.date 
-        WHEN hyrox_races.date IS NOT NULL AND hyrox_races.date NOT LIKE '%12-31' THEN hyrox_races.date 
+        WHEN EXCLUDED.date::text NOT LIKE '%12-31' THEN EXCLUDED.date 
+        WHEN hyrox_races.date IS NOT NULL AND hyrox_races.date::text NOT LIKE '%12-31' THEN hyrox_races.date 
         ELSE EXCLUDED.date 
       END,
       end_date = CASE 
-        WHEN EXCLUDED.end_date NOT LIKE '%12-31' THEN EXCLUDED.end_date 
-        WHEN hyrox_races.end_date IS NOT NULL AND hyrox_races.end_date NOT LIKE '%12-31' THEN hyrox_races.end_date 
+        WHEN EXCLUDED.end_date::text NOT LIKE '%12-31' THEN EXCLUDED.end_date 
+        WHEN hyrox_races.end_date IS NOT NULL AND hyrox_races.end_date::text NOT LIKE '%12-31' THEN hyrox_races.end_date 
         ELSE EXCLUDED.end_date 
       END,
       season = EXCLUDED.season,
