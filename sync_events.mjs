@@ -966,6 +966,7 @@ const MASTER_RACE_DATES = {
   'singapore-2025': { date: '2025-08-29', end_date: '2025-08-31', status: 'completed' },
   'hong-kong-2025': { date: '2025-09-12', end_date: '2025-09-14', status: 'completed' },
   'incheon-2025': { date: '2025-09-26', end_date: '2025-09-28', status: 'completed' },
+  'mumbai-2025': { date: '2025-09-07', end_date: '2025-09-07', status: 'completed' },
   'madrid-2025': { date: '2025-10-17', end_date: '2025-10-19', status: 'completed' },
   'birmingham-2025': { date: '2025-10-24', end_date: '2025-10-26', status: 'completed' },
   'amsterdam-2025': { date: '2025-10-31', end_date: '2025-11-02', status: 'completed' },
@@ -1109,8 +1110,16 @@ async function upsertRaceHeader(race) {
       city = EXCLUDED.city,
       country = EXCLUDED.country,
       country_code = EXCLUDED.country_code,
-      date = COALESCE(EXCLUDED.date, hyrox_races.date),
-      end_date = COALESCE(EXCLUDED.end_date, hyrox_races.end_date),
+      date = CASE 
+        WHEN EXCLUDED.date NOT LIKE '%12-31' THEN EXCLUDED.date 
+        WHEN hyrox_races.date IS NOT NULL AND hyrox_races.date NOT LIKE '%12-31' THEN hyrox_races.date 
+        ELSE EXCLUDED.date 
+      END,
+      end_date = CASE 
+        WHEN EXCLUDED.end_date NOT LIKE '%12-31' THEN EXCLUDED.end_date 
+        WHEN hyrox_races.end_date IS NOT NULL AND hyrox_races.end_date NOT LIKE '%12-31' THEN hyrox_races.end_date 
+        ELSE EXCLUDED.end_date 
+      END,
       season = EXCLUDED.season,
       status = EXCLUDED.status,
       updated_at = NOW();
