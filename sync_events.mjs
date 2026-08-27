@@ -381,12 +381,20 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               if (exactOpt) return [exactOpt.value];
 
               // 3. KEY FIX: Multi-Day Wave Collection
-              // Gathers ALL day variants: "HYROX - Saturday", "HYROX - Sunday", "HYROX - Week I"
-              // Fixes New York, Riga, Johannesburg, Berlin under-counting.
+              // Gathers ALL day variants: "HYROX - Saturday", "HYROX - Sunday"
+              // Explicitly EXCLUDES summary buckets ("Week I", "Week II", "Overall", "Corporate") to avoid double-counting.
               const waveOpts = options.filter(o => {
                 const t = o.text.toUpperCase().trim();
-                const isOv = t.includes('OVERALL') || o.value.endsWith('_OVERALL');
-                if (isOv) return false;
+                const isSummary = t.includes('OVERALL') ||
+                  o.value.endsWith('_OVERALL') ||
+                  t.includes('WEEK I') ||
+                  t.includes('WEEK II') ||
+                  t.includes('WEEK 1') ||
+                  t.includes('WEEK 2') ||
+                  t.includes('WEEKEND') ||
+                  t.includes('COMPANY CHALLENGE') ||
+                  t.includes('CORPORATE');
+                if (isSummary) return false;
                 return (
                   t === expectedEvent ||
                   t.startsWith(`${expectedEvent} -`) ||
@@ -460,8 +468,19 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                       if (await nxtBtn.isVisible().catch(() => false)) { await nxtBtn.click(); wClick = true; }
                     }
                     if (!wClick) break;
-                    await page.waitForTimeout(800);
-                    await page.waitForSelector('.list-active, .list-info, .list-field, tbody tr', { timeout: 5000 }).catch(() => {});
+                    // Robust AJAX wait: wait until DOM signature changes from previous page
+                    let pageUpdated = false;
+                    for (let retry = 0; retry < 12; retry++) {
+                      await sleep(400);
+                      const checkHtml = await page.content();
+                      const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                      const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
+                      if (checkSig && checkSig !== wavePageSig) {
+                        pageUpdated = true;
+                        break;
+                      }
+                    }
+                    if (!pageUpdated) await sleep(600);
                   }
 
                   const wHtml = await page.content();
@@ -587,8 +606,19 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
         }
 
         if (clicked) {
-          await page.waitForTimeout(800);
-          await page.waitForSelector('.list-active, .list-info, .list-field, tbody tr', { timeout: 5000 }).catch(() => { });
+          // Robust AJAX wait: wait until DOM signature changes from previous page
+          let pageUpdated = false;
+          for (let retry = 0; retry < 12; retry++) {
+            await sleep(400);
+            const checkHtml = await page.content();
+            const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+            const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ''}|${a.overall_rank || ''}`).join(';;');
+            if (checkSig && checkSig !== lastPageSignature) {
+              pageUpdated = true;
+              break;
+            }
+          }
+          if (!pageUpdated) await sleep(600);
         } else {
           break; // No more pages link found
         }
