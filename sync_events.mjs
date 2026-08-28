@@ -336,14 +336,9 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
     try {
       // On page 1: ensure we are on the list form, select fields, and submit
       if (p === 1) {
-        const currentUrl = page.url();
-        const hasLegacyForm = await page.locator('select[name="event_main_group"]').isVisible().catch(() => false);
-        const hasModernForm = await page.locator('select[name="event"]').isVisible().catch(() => false);
-
-        if (!currentUrl.includes(seasonSlug) || (!hasLegacyForm && !hasModernForm)) {
-          await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-          await page.waitForSelector('select[name="event_main_group"], select[name="event"]', { timeout: 6000 }).catch(() => { });
-        }
+        // Ensure clean list page navigation at the start of every division
+        await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.waitForSelector('select[name="event_main_group"], select[name="event"]', { timeout: 10000 }).catch(() => {});
 
         // Wait up to 5 seconds for either select to appear
         await Promise.any([
@@ -408,6 +403,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
             }, { cityName: race.city, divEvent: div.event });
 
             if (targetValues && targetValues.length > 0) {
+              console.log(`   🎯 [${div.label}] Matched ${targetValues.length} wave(s): ${targetValues.join(', ')}`);
               // Multi-Wave Loop:
               // - Standard events: targetValues=[singleValue] → same as before
               // - Multi-day events: targetValues=[Sat,Sun,WeekI...] → scrapes ALL waves
@@ -415,41 +411,34 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               let waveTotalCount = 0;
 
               for (const waveValue of targetValues) {
-                await page.evaluate(({ sex }) => {
-                  const form = document.querySelector('form#lbglobal, form[name="lbglobal"]');
-                  if (form) {
-                    if (sex && sex !== '%') {
-                      let input = form.querySelector('input[name="search[sex]"]');
-                      if (!input) {
-                        input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'search[sex]';
-                        form.appendChild(input);
-                      }
-                      input.value = sex;
-                    }
-                    let numInput = form.querySelector('input[name="num_results"]');
-                    if (!numInput) {
-                      numInput = document.createElement('input');
-                      numInput.type = 'hidden';
-                      numInput.name = 'num_results';
-                      form.appendChild(numInput);
-                    }
-                    numInput.value = '100';
-                  }
-                }, { sex: div.sex });
-
                 await Promise.all([
                   page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-                  eventSelect.selectOption({ value: waveValue }, { timeout: 4000 }).catch(() => {})
+                  page.evaluate(({ waveValue, sex }) => {
+                    const form = document.querySelector('form#lbglobal, form[name="lbglobal"]') || document.querySelector('form');
+                    if (form) {
+                      if (sex && sex !== '%') {
+                        let input = form.querySelector('input[name="search[sex]"]');
+                        if (!input) {
+                          input = document.createElement('input');
+                          input.type = 'hidden';
+                          input.name = 'search[sex]';
+                          form.appendChild(input);
+                        }
+                        input.value = sex;
+                      }
+                      const select = form.querySelector('select[name="event"]');
+                      if (select) select.value = waveValue;
+                      form.submit();
+                    }
+                  }, { waveValue, sex: div.sex })
                 ]);
-                await page.waitForTimeout(1000);
+                await sleep(1000);
 
                 const waveLabel = await page.evaluate((v) => {
                   const opt = document.querySelector(`select[name="event"] option[value="${v}"]`);
                   return opt ? opt.text.trim() : v;
                 }, waveValue).catch(() => waveValue);
-                if (targetValues.length > 1) process.stdout.write(`\n      🌊 Wave: ${waveLabel}\n`);
+                console.log(`\n      🌊 Wave: "${waveLabel}" (event=${waveValue}, sex=${div.sex || 'any'})`);
 
                 // Paginate this wave
                 let wavePageSig = '';
@@ -458,14 +447,19 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
 
                 while (waveP <= waveTargetPages) {
                   if (waveP > 1) {
-                    const nxtDis = await page.locator('.pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
-                    if (nxtDis) break;
+                    const isLast = await page.locator('li.pages-nav-button.inactive:has(a[aria-label="Next"]), li.pages-nav-button.disabled:has(a[aria-label="Next"]), .pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
+                    if (isLast) break;
                     let wClick = false;
                     const numLnk = page.locator(`.pagination a:text-is("${waveP}"), a[data-silver*="page=${waveP}"], a[href*="page=${waveP}"]`).first();
-                    if (await numLnk.isVisible().catch(() => false)) { await numLnk.click(); wClick = true; }
-                    else {
-                      const nxtBtn = page.locator('.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], a.silver-link:not(.disabled):has-text("›"), a.silver-link:not(.disabled):has-text("»"), a.silver-link:not(.disabled):has-text(">"), li.pages-nav-button a:has-text("›"), li.pages-nav-button a:has-text("»"), li.pages-nav-button a:has-text(">")').first();
-                      if (await nxtBtn.isVisible().catch(() => false)) { await nxtBtn.click(); wClick = true; }
+                    if (await numLnk.isVisible().catch(() => false)) {
+                      await numLnk.click();
+                      wClick = true;
+                    } else {
+                      const nxtBtn = page.locator('li.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], li.pages-nav-button:not(.inactive):not(.disabled) a:has-text(">"), a.silver-link:not(.disabled):has-text(">"), a[aria-label="Next"]').first();
+                      if (await nxtBtn.isVisible().catch(() => false)) {
+                        await nxtBtn.click();
+                        wClick = true;
+                      }
                     }
                     if (!wClick) break;
                     // Robust AJAX wait: wait until DOM signature changes from previous page
@@ -501,7 +495,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                   }
 
                   waveAthletes.push(...wPA);
-                  process.stdout.write(`      📥 pg${waveP}: +${wPA.length} (wave: ${waveAthletes.length})\r`);
+                  console.log(`      📄 [${div.label}] Page ${waveP}: +${wPA.length} athletes (wave total: ${waveAthletes.length})`);
                   if (ATHLETE_LIMIT && waveAthletes.length >= ATHLETE_LIMIT) break;
                   if (waveP >= waveTargetPages) break;
                   await sleep(600);
@@ -511,14 +505,15 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                 // Go back to list page before next wave
                 if (targetValues.indexOf(waveValue) < targetValues.length - 1) {
                   await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-                  await page.waitForSelector('select[name="event"]', { timeout: 6000 }).catch(() => {});
-                  await page.waitForTimeout(500);
+                  await page.waitForSelector('select[name="event"]', { timeout: 10000 }).catch(() => {});
+                  await sleep(500);
                 }
               }
 
               // Merge all waves → athletes array, then exit outer page loop
               athletes.push(...waveAthletes);
               totalNumAthletes = waveTotalCount || waveAthletes.length;
+              console.log(`   🏁 [${div.label}] Complete: ${athletes.length} total athletes collected.`);
               break;
             } else {
               console.log(`   ⭕  [${div.label}] Not found in dropdown – skipping.`);
@@ -589,7 +584,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
         await page.waitForSelector('.list-active, .list-info, .list-field, .f-list_ranking, tbody tr, p.alert', { timeout: 4000 }).catch(() => { });
       } else {
         // Subsequent pages: check if disabled first
-        const isNextDisabled = await page.locator('.pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
+        const isNextDisabled = await page.locator('li.pages-nav-button.inactive:has(a[aria-label="Next"]), li.pages-nav-button.disabled:has(a[aria-label="Next"]), .pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
         if (isNextDisabled) break;
 
         let clicked = false;
@@ -598,7 +593,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
           await numPageLink.click();
           clicked = true;
         } else {
-          const nextBtn = page.locator('.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], a.silver-link:not(.disabled):has-text("â€º"), a.silver-link:not(.disabled):has-text("Â»"), a.silver-link:not(.disabled):has-text(">"), li.pages-nav-button a:has-text("â€º"), li.pages-nav-button a:has-text("Â»"), li.pages-nav-button a:has-text(">")').first();
+          const nextBtn = page.locator('li.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], li.pages-nav-button:not(.inactive):not(.disabled) a:has-text(">"), a.silver-link:not(.disabled):has-text(">"), a[aria-label="Next"]').first();
           if (await nextBtn.isVisible().catch(() => false)) {
             await nextBtn.click();
             clicked = true;
@@ -1251,8 +1246,10 @@ async function main() {
       }
 
       for (const race of seasonRaces) {
-        console.log(`\nðŸŸï¸  Race: ${race.name} (${race.rawDropdownName})`);
-        console.log(`   ðŸ“… Date: ${race.date} | Status: ${race.status}`);
+        console.log('\n' + '='.repeat(60));
+        console.log(`🏟️  Race: ${race.name} (ID: ${race.id})`);
+        console.log(`📅  Dates: ${race.date} to ${race.end_date || race.date} | Status: ${race.status}`);
+        console.log('='.repeat(60));
         await upsertRaceHeader(race);
 
         if (race.status === 'upcoming' && !FORCE_RACE) {
@@ -1320,6 +1317,7 @@ async function main() {
 
         if (raceTotal > 0 || attendanceSum > 0) {
           const trueTotal = await updateRaceAthleteCount(race.id);
+          console.log(`🏆 [${race.name}] Finished processing all divisions! Total verified human attendance: ${(trueTotal || raceTotal).toLocaleString()} athletes.\n`);
           racesSummary.push({ name: race.name, athletes: trueTotal || raceTotal });
         }
         await sleep(300);
