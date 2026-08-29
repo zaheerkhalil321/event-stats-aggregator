@@ -60,9 +60,7 @@ const FORCE_DIV = divArg !== -1 ? process.argv[divArg + 1] : null;
 // HYROX Seasons to sync
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SEASONS = [
-  { slug: 'season-7', label: '24/25' },
   { slug: 'season-8', label: '25/26' },
-  { slug: 'season-9', label: '26/27' },
 ];
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -338,13 +336,8 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
       if (p === 1) {
         // Ensure clean list page navigation at the start of every division
         await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page.waitForSelector('select[name="event_main_group"], select[name="event"]', { timeout: 10000 }).catch(() => {});
+        await page.waitForSelector('select[name="event"] optgroup, select[name="event_main_group"] option', { state: 'attached', timeout: 15000 }).catch(() => {});
 
-        // Wait up to 5 seconds for either select to appear
-        await Promise.any([
-          page.waitForSelector('select[name="event"]', { timeout: 5000 }).catch(() => {}),
-          page.waitForSelector('select[name="event_main_group"]', { timeout: 5000 }).catch(() => {})
-        ]);
         const isModern = await page.locator('select[name="event"]').isVisible().catch(() => false);
 
         if (isModern) {
@@ -364,9 +357,33 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               });
               if (!og) return null;
 
-              const options = Array.from(og.querySelectorAll('option'));
+              let options = Array.from(og.querySelectorAll('option'));
               const expectedEvent = divEvent.toUpperCase();
-              
+
+              // Fallback for orphan optgroups ("sonstige" / misc):
+              // If division is HYROX DOUBLES or HYROX ADAPTIVE and not found in city optgroup,
+              // check if it was placed into "sonstige" matching the race prefix
+              const hasDivInCity = options.some(o => {
+                const t = o.text.toUpperCase().trim();
+                return t === expectedEvent || t.startsWith(`${expectedEvent} -`) || t.startsWith(`${expectedEvent} –`);
+              });
+              if (!hasDivInCity) {
+                const primarySample = options[0]?.value || '';
+                const codeMatch = primarySample.match(/_([A-Z0-9]{10,12})/);
+                if (codeMatch) {
+                  const racePrefix = codeMatch[1].slice(0, 11);
+                  const miscGroups = optgroups.filter(g => {
+                    const l = (g.getAttribute('label') || '').toLowerCase();
+                    return l.includes('sonstige') || l.includes('other') || l.includes('misc');
+                  });
+                  for (const mg of miscGroups) {
+                    const matchingOpts = Array.from(mg.querySelectorAll('option'))
+                      .filter(o => o.value.includes(racePrefix));
+                    options.push(...matchingOpts);
+                  }
+                }
+              }
+
               // NOTE: OVERALL options are intentionally skipped.
               // Mika Timing's OVERALL page does not support sex filters (search[sex]=M/W),
               // causing 0 results. We always collect individual day waves (Fri/Sat/Sun) below.
@@ -447,7 +464,13 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
 
                 while (waveP <= waveTargetPages) {
                   if (waveP > 1) {
-                    const isLast = await page.locator('li.pages-nav-button.inactive:has(a[aria-label="Next"]), li.pages-nav-button.disabled:has(a[aria-label="Next"]), .pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
+                    const isLast = await page.locator(
+                      'li.pages-nav-button.inactive:has(a[aria-label="Next"]), ' +
+                      'li.pages-nav-button.disabled:has(a[aria-label="Next"]), ' +
+                      'li.pages-nav-button.inactive:has(a:has-text(">")), ' +
+                      'li.pages-nav-button.disabled:has(a:has-text(">")), ' +
+                      'a.silver-link.disabled:has-text(">")'
+                    ).isVisible().catch(() => false);
                     if (isLast) break;
                     let wClick = false;
                     const numLnk = page.locator(`.pagination a:text-is("${waveP}"), a[data-silver*="page=${waveP}"], a[href*="page=${waveP}"]`).first();
@@ -505,7 +528,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                 // Go back to list page before next wave
                 if (targetValues.indexOf(waveValue) < targetValues.length - 1) {
                   await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-                  await page.waitForSelector('select[name="event"]', { timeout: 10000 }).catch(() => {});
+                  await page.waitForSelector('select[name="event"] optgroup', { state: 'attached', timeout: 15000 }).catch(() => {});
                   await sleep(500);
                 }
               }
@@ -584,7 +607,13 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
         await page.waitForSelector('.list-active, .list-info, .list-field, .f-list_ranking, tbody tr, p.alert', { timeout: 4000 }).catch(() => { });
       } else {
         // Subsequent pages: check if disabled first
-        const isNextDisabled = await page.locator('li.pages-nav-button.inactive:has(a[aria-label="Next"]), li.pages-nav-button.disabled:has(a[aria-label="Next"]), .pages-nav-button.inactive, .pages-nav-button.disabled, a.silver-link.disabled').isVisible().catch(() => false);
+        const isNextDisabled = await page.locator(
+          'li.pages-nav-button.inactive:has(a[aria-label="Next"]), ' +
+          'li.pages-nav-button.disabled:has(a[aria-label="Next"]), ' +
+          'li.pages-nav-button.inactive:has(a:has-text(">")), ' +
+          'li.pages-nav-button.disabled:has(a:has-text(">")), ' +
+          'a.silver-link.disabled:has-text(">")'
+        ).isVisible().catch(() => false);
         if (isNextDisabled) break;
 
         let clicked = false;
