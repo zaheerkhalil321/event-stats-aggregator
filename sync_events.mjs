@@ -84,6 +84,10 @@ const DIVISIONS = [
   { label: 'HYROX CORPORATE RELAY MEN', sex: 'M', gender: 'M', event: 'HYROX CORPORATE RELAY' },
   { label: 'HYROX CORPORATE RELAY WOMEN', sex: 'W', gender: 'F', event: 'HYROX CORPORATE RELAY' },
   { label: 'HYROX CORPORATE RELAY MIXED', sex: 'X', gender: 'X', event: 'HYROX CORPORATE RELAY' },
+  { label: 'HYROX ELITE 15 MEN', sex: 'M', gender: 'M', event: 'HYROX ELITE 15' },
+  { label: 'HYROX ELITE 15 WOMEN', sex: 'W', gender: 'F', event: 'HYROX ELITE 15' },
+  { label: 'HYROX ELITE 15 DOUBLES MEN', sex: 'M', gender: 'M', event: 'HYROX ELITE 15 DOUBLES' },
+  { label: 'HYROX ELITE 15 DOUBLES WOMEN', sex: 'W', gender: 'F', event: 'HYROX ELITE 15 DOUBLES' },
   { label: 'HYROX ELITE MEN', sex: 'M', gender: 'M', event: 'HYROX ELITE' },
   { label: 'HYROX ELITE WOMEN', sex: 'W', gender: 'F', event: 'HYROX ELITE' },
 ];
