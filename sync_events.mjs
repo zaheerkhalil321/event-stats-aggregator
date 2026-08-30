@@ -486,29 +486,38 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                     }
 
                     // Robust AJAX wait: wait until DOM signature changes from previous page
-                    let pageUpdated = false;
                     if (wClick) {
-                      for (let retry = 0; retry < 10; retry++) {
+                      for (let retry = 0; retry < 12; retry++) {
                         await sleep(400);
-                        const checkHtml = await page.content();
-                        const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
-                        const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
-                        if (checkSig && checkSig !== wavePageSig) {
-                          pageUpdated = true;
-                          break;
+                        let checkHtml = '';
+                        try { checkHtml = await page.content(); } catch {}
+                        if (checkHtml) {
+                          const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                          const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
+                          if (checkSig && checkSig !== wavePageSig) {
+                            break;
+                          }
                         }
                       }
-                    }
-
-                    // Fallback: If click failed or AJAX stalled, navigate directly via URL
-                    if (!pageUpdated) {
+                    } else {
+                      // Fallback: If click was not found, navigate directly via URL
                       const directUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex ? `&search[sex]=${div.sex}` : '');
                       await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
                       await sleep(600);
                     }
                   }
 
-                  const wHtml = await page.content();
+                  let wHtml = '';
+                  for (let r = 0; r < 6; r++) {
+                    try {
+                      wHtml = await page.content();
+                      if (wHtml) break;
+                    } catch (e) {
+                      await sleep(500);
+                    }
+                  }
+                  if (!wHtml) break;
+
                   let wPA = parseAthletes(wHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
                   if (wPA.length === 0) break;
                   const wSig = wPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
@@ -517,8 +526,9 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                       const directUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex ? `&search[sex]=${div.sex}` : '');
                       await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
                       await sleep(600);
-                      const retryHtml = await page.content();
-                      const retryPA = parseAthletes(retryHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                      let retryHtml = '';
+                      try { retryHtml = await page.content(); } catch {}
+                      const retryPA = retryHtml ? parseAthletes(retryHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName) : [];
                       const retrySig = retryPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
                       if (retrySig !== wavePageSig && retryPA.length > 0) {
                         wPA = retryPA;
