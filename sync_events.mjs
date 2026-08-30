@@ -550,23 +550,31 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                     if (wCnt > 0) {
                       waveTotalCount += wCnt;
                       waveTargetPages = Math.min(Math.ceil(wCnt / Math.max(wPA.length, 1)), maxPages);
-                    } else {
-                      const lastPageNum = await page.evaluate(() => {
-                        const pageLinks = Array.from(document.querySelectorAll('.pagination li:not(.pages-nav-button) a'))
-                          .map(a => parseInt(a.innerText.trim(), 10))
-                          .filter(n => !isNaN(n));
-                        return pageLinks.length > 0 ? Math.max(...pageLinks) : 0;
-                      }).catch(() => 0);
-                      if (lastPageNum > 0) {
-                        waveTargetPages = Math.min(lastPageNum, maxPages);
-                      }
                     }
+                  }
+
+                  const currMaxPage = await page.evaluate(() => {
+                    const pageLinks = Array.from(document.querySelectorAll('.pagination li:not(.pages-nav-button) a'))
+                      .map(a => parseInt(a.innerText.trim(), 10))
+                      .filter(n => !isNaN(n));
+                    return pageLinks.length > 0 ? Math.max(...pageLinks) : 0;
+                  }).catch(() => 0);
+                  if (currMaxPage > waveTargetPages) {
+                    waveTargetPages = currMaxPage;
                   }
 
                   waveAthletes.push(...wPA);
                   console.log(`      📄 [${div.label}] Page ${waveP}: +${wPA.length} athletes (wave total: ${waveAthletes.length})`);
                   if (ATHLETE_LIMIT && waveAthletes.length >= ATHLETE_LIMIT) break;
-                  if (waveP >= waveTargetPages) break;
+
+                  if (waveP >= waveTargetPages) {
+                    const isNextActive = await page.locator('li.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], li.pages-nav-button:not(.inactive):not(.disabled) a:has-text(">"), a.silver-link:not(.disabled):has-text(">")').isVisible().catch(() => false);
+                    if (isNextActive) {
+                      waveTargetPages = waveP + 10;
+                    } else {
+                      break;
+                    }
+                  }
                   await sleep(600);
                   waveP++;
                 }
