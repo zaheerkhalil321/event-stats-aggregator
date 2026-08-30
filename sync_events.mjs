@@ -1158,30 +1158,24 @@ async function upsertRaceHeader(race) {
 async function updateRaceAthleteCount(raceId) {
   if (IS_TEST) return 0;
   try {
-    // Use hyrox_sync_log as source of truth for athlete counts.
-    // Do NOT count hyrox_athlete_results rows: Supabase anon key has a default
-    // page limit (~1000 rows) causing severe undercounting for large races (10k+).
     const res = await runQuery(`
-      SELECT division, athlete_count
-      FROM hyrox_sync_log
-      WHERE race_id = ${esc(raceId)};
+      SELECT COALESCE(sum(count * (CASE WHEN division LIKE '%RELAY%' THEN 4 WHEN division LIKE '%DOUBLES%' THEN 2 ELSE 1 END)), 0) as total
+      FROM (
+        SELECT division, count(*) as count 
+        FROM hyrox_athlete_results 
+        WHERE race_id = ${esc(raceId)} 
+        GROUP BY division
+      ) s;
     `);
-    if (res && res.length > 0) {
-      let total = 0;
-      for (const row of res) {
-        const u = (row.division || '').toUpperCase();
-        const mult = u.includes('DOUBLES') ? 2 : (u.includes('RELAY') ? 4 : 1);
-        total += parseInt(row.athlete_count || 0, 10) * mult;
-      }
-      if (total > 0) {
-        await runQuery(`
-          UPDATE hyrox_races
-          SET athletes_count = ${total}
-          WHERE id = ${esc(raceId)};
-        `);
-        console.log(`   📊 Calculated authentic human attendance: ${total.toLocaleString()} athletes (saved to hyrox_races)`);
-        return total;
-      }
+    const total = res && res[0] ? parseInt(res[0].total || 0, 10) : 0;
+    if (total > 0) {
+      await runQuery(`
+        UPDATE hyrox_races
+        SET athletes_count = ${total}
+        WHERE id = ${esc(raceId)};
+      `);
+      console.log(`   📊 Calculated authentic human attendance: ${total.toLocaleString()} athletes (saved to hyrox_races)`);
+      return total;
     }
   } catch (e) {
     console.warn(`   ⚠️ Could not update race total for ${raceId}:`, e.message.slice(0, 100));
