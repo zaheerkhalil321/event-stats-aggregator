@@ -397,6 +397,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               // Explicitly EXCLUDES summary buckets ("Week I", "Week II", "Overall", "Corporate") to avoid double-counting.
               const waveOpts = options.filter(o => {
                 const t = o.text.toUpperCase().trim();
+                const isCorporate = t.includes('COMPANY CHALLENGE') || t.includes('CORPORATE');
                 const isSummary = t.includes('OVERALL') ||
                   o.value.endsWith('_OVERALL') ||
                   t.includes('WEEK I') ||
@@ -404,8 +405,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                   t.includes('WEEK 1') ||
                   t.includes('WEEK 2') ||
                   t.includes('WEEKEND') ||
-                  t.includes('COMPANY CHALLENGE') ||
-                  t.includes('CORPORATE');
+                  (!expectedEvent.includes('CORPORATE') && isCorporate);
                 if (isSummary) return false;
                 return (
                   t === expectedEvent ||
