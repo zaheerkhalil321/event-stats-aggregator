@@ -484,28 +484,54 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                         wClick = true;
                       }
                     }
-                    if (!wClick) break;
+
                     // Robust AJAX wait: wait until DOM signature changes from previous page
                     let pageUpdated = false;
-                    for (let retry = 0; retry < 12; retry++) {
-                      await sleep(400);
-                      const checkHtml = await page.content();
-                      const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
-                      const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
-                      if (checkSig && checkSig !== wavePageSig) {
-                        pageUpdated = true;
-                        break;
+                    if (wClick) {
+                      for (let retry = 0; retry < 10; retry++) {
+                        await sleep(400);
+                        const checkHtml = await page.content();
+                        const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                        const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
+                        if (checkSig && checkSig !== wavePageSig) {
+                          pageUpdated = true;
+                          break;
+                        }
                       }
                     }
-                    if (!pageUpdated) await sleep(600);
+
+                    // Fallback: If click failed or AJAX stalled, navigate directly via URL
+                    if (!pageUpdated) {
+                      const directUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex ? `&search[sex]=${div.sex}` : '');
+                      await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                      await sleep(600);
+                    }
                   }
 
                   const wHtml = await page.content();
-                  const wPA = parseAthletes(wHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                  let wPA = parseAthletes(wHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
                   if (wPA.length === 0) break;
                   const wSig = wPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
-                  if (wSig === wavePageSig) break;
-                  wavePageSig = wSig;
+                  if (wSig === wavePageSig) {
+                    if (waveP < waveTargetPages) {
+                      const directUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex ? `&search[sex]=${div.sex}` : '');
+                      await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                      await sleep(600);
+                      const retryHtml = await page.content();
+                      const retryPA = parseAthletes(retryHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                      const retrySig = retryPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
+                      if (retrySig !== wavePageSig && retryPA.length > 0) {
+                        wPA = retryPA;
+                        wavePageSig = retrySig;
+                      } else {
+                        break;
+                      }
+                    } else {
+                      break;
+                    }
+                  } else {
+                    wavePageSig = wSig;
+                  }
 
                   if (waveP === 1) {
                     const wTxt = await page.evaluate(() => document.querySelector('.list-info, .str_num, .list-field-header')?.innerText?.trim() || '').catch(() => '');
@@ -514,6 +540,16 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                     if (wCnt > 0) {
                       waveTotalCount += wCnt;
                       waveTargetPages = Math.min(Math.ceil(wCnt / Math.max(wPA.length, 1)), maxPages);
+                    } else {
+                      const lastPageNum = await page.evaluate(() => {
+                        const pageLinks = Array.from(document.querySelectorAll('.pagination li:not(.pages-nav-button) a'))
+                          .map(a => parseInt(a.innerText.trim(), 10))
+                          .filter(n => !isNaN(n));
+                        return pageLinks.length > 0 ? Math.max(...pageLinks) : 0;
+                      }).catch(() => 0);
+                      if (lastPageNum > 0) {
+                        waveTargetPages = Math.min(lastPageNum, maxPages);
+                      }
                     }
                   }
 
