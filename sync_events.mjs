@@ -60,7 +60,9 @@ const FORCE_DIV = divArg !== -1 ? process.argv[divArg + 1] : null;
 // HYROX Seasons to sync
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SEASONS = [
+  { slug: 'season-7', label: '24/25' },
   { slug: 'season-8', label: '25/26' },
+  { slug: 'season-9', label: '26/27' },
 ];
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -396,7 +398,21 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
               const exactOpt = options.find(o => o.text.toUpperCase().trim() === expectedEvent);
               if (exactOpt) return [exactOpt.value];
 
-              // 3. KEY FIX: Multi-Day Wave Collection
+              // 2. MASTER OVERALL WAVE: If an OVERALL option exists (e.g. "HYROX PRO - Overall" or "HPRO_BER26_OVERALL"),
+              // it contains the authoritative combined leaderboard across all weekends/days.
+              const overallOpt = options.find(o => {
+                const t = o.text.toUpperCase().trim();
+                const v = o.value.toUpperCase();
+                const isCorporate = t.includes('COMPANY CHALLENGE') || t.includes('CORPORATE');
+                if (!expectedEvent.includes('CORPORATE') && isCorporate) return false;
+                return (
+                  (t === `${expectedEvent} - OVERALL` || t === `${expectedEvent} – OVERALL` || t.startsWith(`${expectedEvent} - OVERALL`) || v.endsWith('_OVERALL')) &&
+                  (t.startsWith(expectedEvent) || v.startsWith(divEvent.split('_')[0]))
+                );
+              });
+              if (overallOpt) return [overallOpt.value];
+
+              // 3. Multi-Day Wave Collection
               // Gathers ALL day variants: "HYROX - Saturday", "HYROX - Sunday"
               // Explicitly EXCLUDES summary buckets ("Week I", "Week II", "Overall", "Corporate") to avoid double-counting.
               const waveOpts = options.filter(o => {

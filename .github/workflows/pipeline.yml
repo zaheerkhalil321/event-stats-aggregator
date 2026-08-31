@@ -14,11 +14,11 @@ on:
         default: ''
         type: string
       season:
-        description: 'Dataset season to ingest (season-8 / 2026 events)'
+        description: 'Dataset season to ingest (season-8, season-9, or season-7)'
         required: false
         default: 'season-8'
         type: choice
-        options: ['season-8', 'season-7', 'all']
+        options: ['season-8', 'season-9', 'season-7', 'all']
       dry_run:
         description: 'Dry run (no DB writes)?'
         required: false
@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        season: ['season-8']
+        season: ['season-8', 'season-9']
 
     steps:
       - name: 📦 Checkout repository
