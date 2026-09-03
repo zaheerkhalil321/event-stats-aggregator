@@ -969,8 +969,13 @@ async function initSyncLogTable() {
     `);
 
     if (FORCE_RESYNC) {
-      console.log('ðŸ§¹ [FORCE RESYNC] Resetting sync checkpoints to re-fetch 100% of athletes...');
-      await runQuery(`TRUNCATE TABLE hyrox_sync_log;`);
+      if (FORCE_RACE) {
+        console.log(`🧹 [FORCE RESYNC] Resetting sync checkpoints for race "${FORCE_RACE}"...`);
+        await runQuery(`DELETE FROM hyrox_sync_log WHERE race_id ILIKE '%${FORCE_RACE}%';`);
+      } else {
+        console.log('🧹 [FORCE RESYNC] Resetting sync checkpoints to re-fetch 100% of athletes...');
+        await runQuery(`TRUNCATE TABLE hyrox_sync_log;`);
+      }
     }
   } catch (_) { }
 }
