@@ -1339,7 +1339,16 @@ async function main() {
         );
         console.log(`   ðŸŽ¯ Filtered to specific race: "${FORCE_RACE}" (${seasonRaces.length} matching)`);
       } else {
-        console.log(`   âœ… Found ${allSeasonRaces.length} official races. Filtered to ${seasonRaces.length} completed races.\n`);
+        console.log(`   ✅ Found ${allSeasonRaces.length} official races. Filtered to ${seasonRaces.length} completed races.\n`);
+      }
+
+      // Register all discovered official races upfront into hyrox_races calendar
+      if (!IS_TEST && !FORCE_RACE && allSeasonRaces.length > 0) {
+        console.log(`   📋 Registering all ${allSeasonRaces.length} official race calendar entries into hyrox_races...`);
+        for (const r of allSeasonRaces) {
+          await upsertRaceHeader(r);
+        }
+        console.log(`   ✅ All ${allSeasonRaces.length} race headers saved to database.\n`);
       }
 
       if (seasonRaces.length === 0) {
