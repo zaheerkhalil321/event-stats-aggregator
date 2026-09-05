@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        season: ['season-8', 'season-9']
+        season: ['season-8', 'season-9', 'season-7']
 
     steps:
       - name: 📦 Checkout repository

@@ -4,4 +4,6 @@ node_modules/
 *.log
 .DS_Store
 *.traineddata
-
+2025/
+images/
+athletes_sample.json
