@@ -512,136 +512,95 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
 
                 try {
                   while (waveP <= waveTargetPages) {
-                    if (waveP > 1) {
-                      const isLast = await page.locator(
-                        'li.pages-nav-button.inactive:has(a[aria-label="Next"]), ' +
-                        'li.pages-nav-button.disabled:has(a[aria-label="Next"]), ' +
-                        'li.pages-nav-button.inactive:has(a:has-text(">")), ' +
-                        'li.pages-nav-button.disabled:has(a:has-text(">")), ' +
-                        'a.silver-link.disabled:has-text(">")'
-                      ).isVisible().catch(() => false);
-                      if (isLast) break;
-
-                      // Find next button or direct page number
-                      const nextBtn = page.locator('li.pages-nav-button:not(.inactive):not(.disabled) a:has-text(">"), a.silver-link:not(.disabled):has-text(">"), a[aria-label="Next"]:not(.disabled)').first();
-                      const numPageBtn = page.locator(`.pagination a:has-text("${waveP}")`).first();
-
-                      let clicked = false;
-                      try {
-                        const targetBtn = (await numPageBtn.isVisible().catch(() => false)) ? numPageBtn : nextBtn;
-                        if (await targetBtn.isVisible().catch(() => false)) {
-                          await Promise.all([
-                            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-                            targetBtn.click({ force: true }).catch(() => {})
-                          ]);
-                          clicked = true;
-                        }
-                      } catch (err) {
-                        // Fallback evaluate click if locator fails
-                        clicked = await page.evaluate((targetP) => {
-                          const links = Array.from(document.querySelectorAll('.pagination a, .pages a'));
-                          const btn = links.find(a => a.textContent.trim() === String(targetP)) ||
-                                      links.find(a => a.textContent.trim() === '>');
-                          if (btn) { btn.click(); return true; }
-                          return false;
-                        }, waveP).catch(() => false);
-                      }
-
-                      if (!clicked) {
-                        break;
-                      }
-
-                      // Wait until DOM signature changes from previous page (handles AJAX & full navigation)
-                      for (let retry = 0; retry < 30; retry++) {
-                        await sleep(350);
-                        const checkHtml = await page.content().catch(() => '');
-                        if (checkHtml) {
-                          const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
-                          const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
-                          if (checkSig && checkSig !== wavePageSig && checkPA.length > 0) {
-                            break;
-                          }
-                        }
-                      }
-                    }
-
                     let wHtml = '';
-                    for (let r = 0; r < 8; r++) {
-                      try {
-                        wHtml = await page.content();
-                        if (wHtml) break;
-                      } catch (e) {
-                        await sleep(500);
-                      }
-                    }
-                    if (!wHtml) break;
-
-                    let wPA = parseAthletes(wHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
-                    if (wPA.length === 0) break;
-                    const wSig = wPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
-                    if (wSig === wavePageSig) {
-                      // Attempt a re-click if DOM didn't update in time
-                      const nextBtn = page.locator('li.pages-nav-button:not(.inactive):not(.disabled) a:has-text(">"), a.silver-link:not(.disabled):has-text(">")').first();
-                      if (await nextBtn.isVisible().catch(() => false)) {
-                        await Promise.all([
-                          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-                          nextBtn.click({ force: true }).catch(() => {})
-                        ]);
-                        for (let retry = 0; retry < 20; retry++) {
-                          await sleep(350);
-                          const checkHtml = await page.content().catch(() => '');
-                          if (checkHtml) {
-                            const checkPA = parseAthletes(checkHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
-                            const checkSig = checkPA.map(a => `${a.full_name}|${a.bib_number || ""}|${a.overall_rank || ""}`).join(";;");
-                            if (checkSig && checkSig !== wavePageSig && checkPA.length > 0) {
-                              wPA = checkPA;
-                              wavePageSig = checkSig;
-                              break;
-                            }
-                          }
-                        }
-                      }
-                      if (wSig === wavePageSig) {
-                        break;
-                      }
-                    } else {
-                      wavePageSig = wSig;
-                    }
 
                     if (waveP === 1) {
+                      // On Page 1: we just submitted the form in the browser
+                      for (let r = 0; r < 8; r++) {
+                        try {
+                          wHtml = await page.content();
+                          if (wHtml && wHtml.includes('list-group-item')) break;
+                        } catch (e) {
+                          await sleep(400);
+                        }
+                      }
+
+                      // Math-based Target Pages Detection from Page 1:
                       const wTxt = await page.evaluate(() => document.querySelector('.list-info, .str_num, .list-field-header')?.innerText?.trim() || '').catch(() => '');
                       const mC = wTxt.match(/([\d,]+)\s+Result/i) || wTxt.match(/Results?[:\s]+([\d,]+)/i) || wTxt.match(/of\s+([\d,]+)/i);
                       const wCnt = mC ? parseInt(mC[1].replace(/,/g, ''), 10) : 0;
                       if (wCnt > 0) {
                         waveTotalCount += wCnt;
-                        waveTargetPages = Math.min(Math.ceil(wCnt / Math.max(wPA.length, 1)), maxPages);
+                        // Mika Timing serves 25 results per page
+                        const calcPages = Math.ceil(wCnt / 25);
+                        waveTargetPages = Math.min(calcPages, maxPages);
+                        console.log(`      📊 [${div.label}] Detected ${wCnt.toLocaleString()} total results → Target: ${waveTargetPages} pages`);
+                      }
+                    } else {
+                      // Page 2+: Direct URL navigation (Bypasses button clicking & DOM lag entirely)
+                      const directUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex && div.sex !== '%' ? `&search[sex]=${div.sex}` : '');
+
+                      // Fast HTTP fetch attempt (takes ~300ms, 0 MB memory)
+                      for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                          const res = await fetch(directUrl, {
+                            headers: {
+                              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                            }
+                          });
+                          if (res.ok) {
+                            const text = await res.text();
+                            if (text && text.includes('list-group-item')) {
+                              wHtml = text;
+                              break;
+                            }
+                          }
+                        } catch (_) {
+                          await sleep(400 * attempt);
+                        }
+                      }
+
+                      // Fallback: If fetch failed, navigate Playwright page directly
+                      if (!wHtml) {
+                        await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+                        wHtml = await page.content().catch(() => '');
                       }
                     }
 
-                    const currMaxPage = await page.evaluate(() => {
-                      const pageLinks = Array.from(document.querySelectorAll('.pagination li:not(.pages-nav-button) a'))
-                        .map(a => parseInt(a.innerText.trim(), 10))
-                        .filter(n => !isNaN(n));
-                      return pageLinks.length > 0 ? Math.max(...pageLinks) : 0;
-                    }).catch(() => 0);
+                    if (!wHtml) {
+                      console.warn(`      ⚠️ [${div.label}] Page ${waveP}: Empty HTML received after retries.`);
+                      break;
+                    }
+
+                    let wPA = parseAthletes(wHtml, race.id, div.label, div.gender, seasonSlug, race.rawDropdownName);
+                    if (wPA.length === 0) {
+                      // Reached end of actual athletes
+                      break;
+                    }
+
+                    // Dynamically check highest page link found in HTML in case list has more pages
+                    const pageNumMatches = Array.from(wHtml.matchAll(/class=['"]silver-link['"][^>]*>(\d+)<\/a>/gi)).map(m => parseInt(m[1], 10));
+                    const currMaxPage = pageNumMatches.length > 0 ? Math.max(...pageNumMatches) : 0;
                     if (currMaxPage > waveTargetPages) {
                       waveTargetPages = currMaxPage;
                     }
 
                     waveAthletes.push(...wPA);
-                    console.log(`      📄 [${div.label}] Page ${waveP}: +${wPA.length} athletes (wave total: ${waveAthletes.length})`);
+                    console.log(`      📄 [${div.label}] Page ${waveP}${waveTargetPages < 50000 ? '/' + waveTargetPages : ''}: +${wPA.length} athletes (wave total: ${waveAthletes.length})`);
                     if (ATHLETE_LIMIT && waveAthletes.length >= ATHLETE_LIMIT) break;
 
                     if (waveP >= waveTargetPages) {
-                      const isNextActive = await page.locator('li.pages-nav-button:not(.inactive):not(.disabled) a[aria-label="Next"], li.pages-nav-button:not(.inactive):not(.disabled) a:has-text(">"), a.silver-link:not(.disabled):has-text(">")').isVisible().catch(() => false);
-                      if (isNextActive) {
+                      // Check if Next button is still active in HTML
+                      const hasNext = wHtml.includes('pages-nav-button') && wHtml.includes('&gt;') && !wHtml.includes('class="pages-nav-button inactive"');
+                      if (hasNext && wPA.length >= 20) {
                         waveTargetPages = waveP + 10;
                       } else {
                         break;
                       }
                     }
-                    await sleep(600);
+
                     waveP++;
+                    await sleep(150);
                   }
                 } catch (waveErr) {
                   console.warn(`\n      ⚠️ [${div.label}] Wave pagination stopped at page ${waveP}:`, waveErr.message.slice(0, 100));
