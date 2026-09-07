@@ -1275,6 +1275,20 @@ async function upsertRaceHeader(race) {
 async function updateRaceAthleteCount(raceId) {
   if (IS_TEST) return 0;
   try {
+    // 🛡️ Automatic Dedup Shield: Ensure no summary-bucket clones exist for this race
+    await runQuery(`
+      DELETE FROM hyrox_athlete_results a_open
+      USING hyrox_athlete_results a_pro
+      WHERE a_open.race_id = ${esc(raceId)}
+        AND a_pro.race_id = ${esc(raceId)}
+        AND a_open.full_name = a_pro.full_name
+        AND a_open.total_time = a_pro.total_time
+        AND a_open.overall_rank = a_pro.overall_rank
+        AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
+        AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
+        AND a_open.id != a_pro.id;
+    `);
+
     const res = await runQuery(`
       SELECT COALESCE(sum(count * (CASE WHEN division LIKE '%RELAY%' THEN 4 WHEN division LIKE '%DOUBLES%' THEN 2 ELSE 1 END)), 0) as total
       FROM (

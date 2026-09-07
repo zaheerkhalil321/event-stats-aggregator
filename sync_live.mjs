@@ -379,15 +379,33 @@ async function upsertLiveRaceHeader(race) {
 async function updateLiveRaceCount(raceId) {
   if (IS_TEST) return 0;
   try {
-    const res = await runQuery(`
-      SELECT COUNT(DISTINCT (full_name, division)) as count
-      FROM hyrox_athlete_results
-      WHERE race_id = ${esc(raceId)};
+    // 🛡️ Automatic Dedup Shield: Ensure no summary-bucket clones exist for this race
+    await runQuery(`
+      DELETE FROM hyrox_athlete_results a_open
+      USING hyrox_athlete_results a_pro
+      WHERE a_open.race_id = ${esc(raceId)}
+        AND a_pro.race_id = ${esc(raceId)}
+        AND a_open.full_name = a_pro.full_name
+        AND a_open.total_time = a_pro.total_time
+        AND a_open.overall_rank = a_pro.overall_rank
+        AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
+        AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
+        AND a_open.id != a_pro.id;
     `);
-    const count = parseInt(res[0]?.count || 0, 10);
+
+    const res = await runQuery(`
+      SELECT COALESCE(sum(count * (CASE WHEN division LIKE '%RELAY%' THEN 4 WHEN division LIKE '%DOUBLES%' THEN 2 ELSE 1 END)), 0) as total
+      FROM (
+        SELECT division, count(*) as count 
+        FROM hyrox_athlete_results 
+        WHERE race_id = ${esc(raceId)} 
+        GROUP BY division
+      ) s;
+    `);
+    const count = parseInt(res[0]?.total || 0, 10);
     await runQuery(`
       UPDATE hyrox_races
-      SET athletes_count = ${count}, status = 'live', updated_at = NOW()
+      SET athletes_count = ${count}, status = 'completed', updated_at = NOW()
       WHERE id = ${esc(raceId)};
     `);
     return count;
