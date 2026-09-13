@@ -25,6 +25,11 @@ on:
         type: choice
         options: ['false', 'true']
 
+# 🛡️ Concurrency Lock: Prevents overlapping runs if one is already in progress
+concurrency:
+  group: live-weekend-sync
+  cancel-in-progress: false
+
 jobs:
   live-sync:
     name: ⚡ Scrape Live Weekend Heats
