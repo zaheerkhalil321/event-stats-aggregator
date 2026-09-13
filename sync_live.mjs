@@ -357,6 +357,77 @@ async function upsertLiveAthletes(athletes) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Header and Count Sync
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Header and Count Sync
+// ─────────────────────────────────────────────────────────────────────────────
+const KNOWN_DATES = {
+  'tenerife-2026': { date: '2026-09-04', end_date: '2026-09-06' },
+  'washington-dc-sep-2026': { date: '2026-09-04', end_date: '2026-09-07' },
+  'athens-2026': { date: '2026-09-12', end_date: '2026-09-14' },
+  'acapulco-2026': { date: '2026-09-12', end_date: '2026-09-14' },
+  'perth-2026': { date: '2026-09-19', end_date: '2026-09-21' },
+  'bangkok-2026': { date: '2026-09-26', end_date: '2026-09-28' },
+  'maastricht-2026': { date: '2026-10-03', end_date: '2026-10-05' },
+  'cape-town-2026': { date: '2026-10-10', end_date: '2026-10-12' },
+  'shenzhen-2026': { date: '2026-10-17', end_date: '2026-10-19' },
+  'beijing-2026': { date: '2026-10-24', end_date: '2026-10-26' },
+  'chiba-2026': { date: '2026-10-31', end_date: '2026-11-02' },
+  'istanbul-2026': { date: '2026-11-07', end_date: '2026-11-09' },
+  'delhi-2026': { date: '2026-11-14', end_date: '2026-11-16' },
+  'mumbai-2026': { date: '2026-11-21', end_date: '2026-11-23' },
+  'chengdu-2026': { date: '2026-11-28', end_date: '2026-11-30' },
+  'hangzhou-2026': { date: '2026-12-05', end_date: '2026-12-07' },
+  'sydney-2026': { date: '2026-12-12', end_date: '2026-12-14' },
+  'jakarta-2026': { date: '2026-12-19', end_date: '2026-12-21' },
+};
+
+function getRaceMetadata(label) {
+  const clean = label.replace(/^(\d{4})\s+/, '');
+  const yearMatch = label.match(/^(\d{4})/);
+  const year = yearMatch ? yearMatch[1] : '2026';
+  const city = clean.trim();
+  const slug = city.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  
+  let id = `${slug}-${year}`;
+  if (slug === 'washington-dc') {
+    id = `washington-dc-sep-${year}`;
+  }
+
+  // Country & code mapping
+  let country = 'International';
+  let countryCode = 'XX';
+  const cl = city.toLowerCase();
+  if (cl.includes('athens')) { country = 'Greece'; countryCode = 'GR'; }
+  else if (cl.includes('acapulco') || cl.includes('cancun') || cl.includes('mexico')) { country = 'Mexico'; countryCode = 'MX'; }
+  else if (cl.includes('tenerife') || cl.includes('madrid') || cl.includes('barcelona') || cl.includes('valencia') || cl.includes('malaga') || cl.includes('bilbao')) { country = 'Spain'; countryCode = 'ES'; }
+  else if (cl.includes('washington') || cl.includes('new york') || cl.includes('chicago') || cl.includes('miami') || cl.includes('houston') || cl.includes('dallas') || cl.includes('phoenix') || cl.includes('las vegas')) { country = 'United States'; countryCode = 'US'; }
+  else if (cl.includes('perth') || cl.includes('sydney') || cl.includes('melbourne') || cl.includes('brisbane')) { country = 'Australia'; countryCode = 'AU'; }
+  else if (cl.includes('bangkok')) { country = 'Thailand'; countryCode = 'TH'; }
+  else if (cl.includes('cape town')) { country = 'South Africa'; countryCode = 'ZA'; }
+  else if (cl.includes('beijing') || cl.includes('shenzhen') || cl.includes('chengdu') || cl.includes('hangzhou') || cl.includes('shanghai')) { country = 'China'; countryCode = 'CN'; }
+  else if (cl.includes('chiba') || cl.includes('osaka') || cl.includes('tokyo')) { country = 'Japan'; countryCode = 'JP'; }
+  else if (cl.includes('istanbul') || cl.includes('izmir')) { country = 'Turkey'; countryCode = 'TR'; }
+  else if (cl.includes('delhi') || cl.includes('mumbai')) { country = 'India'; countryCode = 'IN'; }
+  else if (cl.includes('jakarta')) { country = 'Indonesia'; countryCode = 'ID'; }
+  else if (cl.includes('maastricht') || cl.includes('amsterdam')) { country = 'Netherlands'; countryCode = 'NL'; }
+
+  const known = KNOWN_DATES[id] || {};
+  const raceDate = known.date || '2026-09-04';
+  const endDate = known.end_date || (slug === 'washington-dc' ? '2026-09-07' : '2026-09-06');
+  const raceName = slug === 'washington-dc' ? `HYROX Washington DC September ${year}` : `HYROX ${city} ${year}`;
+
+  return {
+    id,
+    name: raceName,
+    city,
+    country,
+    country_code: countryCode,
+    date: raceDate,
+    end_date: endDate,
+    season: '26/27',
+  };
+}
+
 async function upsertLiveRaceHeader(race) {
   if (IS_TEST) return;
   const sql = `
@@ -367,16 +438,26 @@ async function upsertLiveRaceHeader(race) {
       ${esc(race.end_date)}, ${esc(race.season)}, 'live', 0
     )
     ON CONFLICT (id) DO UPDATE SET
-      status     = 'live',
-      season     = EXCLUDED.season,
-      date       = EXCLUDED.date,
-      end_date   = EXCLUDED.end_date,
-      updated_at = NOW();
+      name         = EXCLUDED.name,
+      city         = EXCLUDED.city,
+      country      = EXCLUDED.country,
+      country_code = EXCLUDED.country_code,
+      status       = 'live',
+      season       = EXCLUDED.season,
+      date         = CASE 
+        WHEN hyrox_races.date IS NOT NULL AND hyrox_races.date::text NOT LIKE '%12-31' THEN hyrox_races.date 
+        ELSE EXCLUDED.date 
+      END,
+      end_date     = CASE 
+        WHEN hyrox_races.end_date IS NOT NULL AND hyrox_races.end_date::text NOT LIKE '%12-31' THEN hyrox_races.end_date 
+        ELSE EXCLUDED.end_date 
+      END,
+      updated_at   = NOW();
   `;
   await runQuery(sql);
 }
 
-async function updateLiveRaceCount(raceId) {
+async function updateLiveRaceCount(raceId, raceEndDate) {
   if (IS_TEST) return 0;
   try {
     // 🛡️ Automatic Dedup Shield: Ensure no summary-bucket clones exist for this race
@@ -403,9 +484,14 @@ async function updateLiveRaceCount(raceId) {
       ) s;
     `);
     const count = parseInt(res[0]?.total || 0, 10);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const isPast = raceEndDate && raceEndDate < today;
+    const finalStatus = isPast ? 'completed' : 'live';
+
     await runQuery(`
       UPDATE hyrox_races
-      SET athletes_count = ${count}, status = 'completed', updated_at = NOW()
+      SET athletes_count = ${count}, status = ${esc(finalStatus)}, updated_at = NOW()
       WHERE id = ${esc(raceId)};
     `);
     return count;
@@ -462,50 +548,59 @@ async function main() {
 
     console.log(`📋 Discovered ${allOptgroups.length} Season 9 event groups.`);
 
-    // Active Live Targets: Tenerife & Washington DC
-    let targetGroups = allOptgroups.filter(g => 
-      g.label.includes('Tenerife') || g.label.includes('Washington')
-    );
-
+    let targetGroups = [];
     if (FORCE_RACE) {
-      targetGroups = allOptgroups.filter(g => 
-        g.label.toLowerCase().includes(FORCE_RACE.toLowerCase())
-      );
+      if (FORCE_RACE.toLowerCase() === 'all') {
+        targetGroups = allOptgroups;
+      } else {
+        targetGroups = allOptgroups.filter(g => 
+          g.label.toLowerCase().includes(FORCE_RACE.toLowerCase())
+        );
+      }
       console.log(`🎯 Filtered to: ${targetGroups.map(g => g.label).join(', ')}`);
+    } else {
+      // By default in live engine, target all Season 9 event groups!
+      targetGroups = allOptgroups;
+      console.log(`🎯 Scanning all ${targetGroups.length} Season 9 event groups...`);
     }
 
     for (const group of targetGroups) {
       console.log(`\n${'═'.repeat(60)}`);
-      console.log(`🔴 LIVE EVENT: ${group.label}`);
+      console.log(`🔴 EVENT: ${group.label}`);
       console.log('═'.repeat(60));
-
-      const isTenerife = group.label.toLowerCase().includes('tenerife');
-      const raceId = isTenerife ? 'tenerife-2026' : 'washington-dc-sep-2026';
-      const raceName = isTenerife ? 'HYROX Tenerife 2026' : 'HYROX Washington DC September 2026';
-      const city = isTenerife ? 'Tenerife' : 'Washington DC';
-      const country = isTenerife ? 'Spain' : 'United States';
-      const countryCode = isTenerife ? 'ES' : 'US';
-      const raceDate = isTenerife ? '2026-09-04' : '2026-09-03';
-      const endDate = isTenerife ? '2026-09-06' : '2026-09-07';
-
-      const race = {
-        id: raceId,
-        name: raceName,
-        city,
-        country,
-        country_code: countryCode,
-        date: raceDate,
-        end_date: endDate,
-        season: '26/27',
-      };
-
-      console.log(`   📌 Registering "${race.name}" as status: "live" in Supabase...`);
-      await upsertLiveRaceHeader(race);
 
       const activeOptions = group.options.filter(o => {
         const t = o.text.toUpperCase();
         return !t.includes('OVERALL') && !o.val.endsWith('_OVERALL');
       });
+
+      if (activeOptions.length === 0) {
+        console.log(`   ⏩ No active waves configured for "${group.label}". Skipping.`);
+        continue;
+      }
+
+      // ⚡ Pre-flight check: verify if any results exist for this event before deep scanning
+      const probeOpt = activeOptions[0];
+      let hasResults = false;
+      try {
+        const probeUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${probeOpt.val}&pid=list&num_results=1`;
+        await page.goto(probeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        hasResults = await page.evaluate(() => 
+          document.querySelectorAll('li.list-group-item:not(.list-group-header)').length > 0
+        );
+      } catch (err) {
+        hasResults = true; // Fallback to scanning if probe fails
+      }
+
+      if (!hasResults && !FORCE_RACE) {
+        console.log(`   ⏩ [PRE-FLIGHT] No active heats or results yet for "${group.label}". Skipping.`);
+        continue;
+      }
+
+      const race = getRaceMetadata(group.label);
+
+      console.log(`   📌 Registering "${race.name}" (${race.id}) as status: "live" in Supabase...`);
+      await upsertLiveRaceHeader(race);
 
       console.log(`   ⚡ Scanning ${activeOptions.length} wave categories sequentially...\n`);
 
@@ -545,8 +640,8 @@ async function main() {
         }
       }
 
-      const finalCount = await updateLiveRaceCount(race.id);
-      console.log(`\n   🏁 ${race.name} sync complete! Total live athletes in DB: ${finalCount}`);
+      const finalCount = await updateLiveRaceCount(race.id, race.end_date);
+      console.log(`\n   🏁 ${race.name} sync complete! Total athletes in DB: ${finalCount}`);
     }
 
     console.log('\n' + '='.repeat(68));

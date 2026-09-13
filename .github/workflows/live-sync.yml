@@ -1,0 +1,66 @@
+name: ⚡ Live Weekend Sync
+
+on:
+  schedule:
+    # Run every 20 minutes between 06:00 and 22:59 UTC on Friday, Saturday, and Sunday (Race Days)
+    - cron: '*/20 6-22 * * 5,6,0'
+
+  # Allow manual trigger with optional race target, splits depth, or dry-run
+  workflow_dispatch:
+    inputs:
+      race:
+        description: 'Target specific race (e.g. athens, acapulco, all, or leave blank for active live races)'
+        required: false
+        default: 'all'
+        type: string
+      splits:
+        description: 'Deep splits limit per division (default: 20 for fast sync, 0 for counter only, 50, all)'
+        required: false
+        default: '20'
+        type: string
+      dry_run:
+        description: 'Dry run (no DB writes)?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  live-sync:
+    name: ⚡ Scrape Live Weekend Heats
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        run: npm install
+
+      - name: 🌐 Install Playwright Chromium browser
+        run: npx playwright install chromium --with-deps
+
+      - name: ⚡ Run Live Sync Engine
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          FLAGS=""
+          if [ -n "${{ github.event.inputs.race }}" ]; then
+            FLAGS="$FLAGS --race=${{ github.event.inputs.race }}"
+          fi
+          if [ -n "${{ github.event.inputs.splits }}" ]; then
+            FLAGS="$FLAGS --splits=${{ github.event.inputs.splits }}"
+          else
+            FLAGS="$FLAGS --splits=20"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --test"
+          fi
+          node sync_live.mjs $FLAGS

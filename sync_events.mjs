@@ -1041,9 +1041,15 @@ function getCountryByCity(city) {
   if (c.includes('london') || c.includes('manchester') || c.includes('birmingham') || c.includes('glasgow') || c.includes('cardiff')) return { name: 'United Kingdom', code: 'GB' };
   if (c.includes('berlin') || c.includes('munich') || c.includes('cologne') || c.includes('frankfurt') || c.includes('hamburg')) return { name: 'Germany', code: 'DE' };
   if (c.includes('paris') || c.includes('nice')) return { name: 'France', code: 'FR' };
-  if (c.includes('madrid') || c.includes('barcelona') || c.includes('valencia') || c.includes('malaga')) return { name: 'Spain', code: 'ES' };
-  if (c.includes('milan') || c.includes('rome') || c.includes('rimini')) return { name: 'Italy', code: 'IT' };
-  if (c.includes('new york') || c.includes('chicago') || c.includes('miami') || c.includes('houston') || c.includes('atlanta') || c.includes('dallas') || c.includes('washington') || c.includes('los angeles')) return { name: 'United States', code: 'US' };
+  if (c.includes('athens')) return { name: 'Greece', code: 'GR' };
+  if (c.includes('acapulco') || c.includes('cancun') || c.includes('guadalajara') || c.includes('mexico')) return { name: 'Mexico', code: 'MX' };
+  if (c.includes('madrid') || c.includes('barcelona') || c.includes('valencia') || c.includes('malaga') || c.includes('bilbao') || c.includes('tenerife')) return { name: 'Spain', code: 'ES' };
+  if (c.includes('milan') || c.includes('rome') || c.includes('rimini') || c.includes('turin')) return { name: 'Italy', code: 'IT' };
+  if (c.includes('chiba') || c.includes('osaka') || c.includes('tokyo')) return { name: 'Japan', code: 'JP' };
+  if (c.includes('istanbul') || c.includes('izmir')) return { name: 'Turkey', code: 'TR' };
+  if (c.includes('jakarta')) return { name: 'Indonesia', code: 'ID' };
+  if (c.includes('shanghai') || c.includes('beijing') || c.includes('shenzhen') || c.includes('chengdu') || c.includes('hangzhou')) return { name: 'China', code: 'CN' };
+  if (c.includes('new york') || c.includes('chicago') || c.includes('miami') || c.includes('houston') || c.includes('atlanta') || c.includes('dallas') || c.includes('washington') || c.includes('los angeles') || c.includes('phoenix') || c.includes('las vegas')) return { name: 'United States', code: 'US' };
   if (c.includes('sydney') || c.includes('melbourne') || c.includes('brisbane') || c.includes('perth')) return { name: 'Australia', code: 'AU' };
   if (c.includes('singapore')) return { name: 'Singapore', code: 'SG' };
   if (c.includes('hong kong')) return { name: 'Hong Kong', code: 'HK' };
@@ -1174,6 +1180,12 @@ const MASTER_RACE_DATES = {
   'manchester-2026': { date: '2026-01-16', end_date: '2026-01-18', status: 'completed' },
   'st-gallen-2026': { date: '2026-01-09', end_date: '2026-01-11', status: 'completed' },
 
+  // Season 9 (26/27) Kickoff Weekend
+  'athens-2026': { date: '2026-09-04', end_date: '2026-09-06', status: 'completed' },
+  'acapulco-2026': { date: '2026-09-04', end_date: '2026-09-06', status: 'completed' },
+  'tenerife-2026': { date: '2026-09-04', end_date: '2026-09-06', status: 'completed' },
+  'washington-dc-sep-2026': { date: '2026-09-04', end_date: '2026-09-07', status: 'completed' },
+
   // 2026 Future / Upcoming
   'stockholm-2026': { date: '2026-12-10', end_date: '2026-12-13', status: 'upcoming' },
 };
@@ -1214,17 +1226,23 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
     const year = match ? match[1] : '2025';
     const cityName = match ? match[2] : rawName;
     const cleanCity = cityName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const raceId = `${cleanCity}-${year}`;
+    let raceId = `${cleanCity}-${year}`;
+    if (cleanCity === 'washington-dc' && seasonLabel === '26/27') {
+      raceId = `washington-dc-sep-${year}`;
+    }
     const country = getCountryByCity(cityName);
 
     const master = MASTER_RACE_DATES[raceId] || {};
     const exactDate = master.date || `${year}-12-31`;
     const exactEndDate = master.end_date || exactDate;
     const status = master.status || (exactDate > today ? 'upcoming' : 'completed');
+    const raceName = (cleanCity === 'washington-dc' && seasonLabel === '26/27')
+      ? `HYROX Washington DC September ${year}`
+      : `HYROX ${cityName} ${year}`;
 
     return {
       id: raceId,
-      name: `HYROX ${cityName} ${year}`,
+      name: raceName,
       rawDropdownName: rawName,
       city: cityName,
       country: country.name,
@@ -1416,8 +1434,52 @@ async function main() {
         await upsertRaceHeader(race);
 
         if (race.status === 'upcoming' && !FORCE_RACE) {
-          console.log(`   â© Upcoming race â€” skipping division scraping (calendar already synced).`);
-          continue;
+          // Check if Mika Timing actually has results for this event before skipping
+          const hasResults = await page.evaluate(({ rawDropdownName }) => {
+            const select = document.querySelector('select[name="event"]');
+            if (!select) return false;
+            const og = Array.from(select.querySelectorAll('optgroup'))
+              .find(g => (g.getAttribute('label') || '').toLowerCase().trim() === (rawDropdownName || '').toLowerCase().trim());
+            return og ? og.querySelectorAll('option').length > 0 : false;
+          }, { rawDropdownName: race.rawDropdownName }).catch(() => false);
+
+          if (hasResults) {
+            const candidateOpts = await page.evaluate(({ rawDropdownName }) => {
+              const select = document.querySelector('select[name="event"]');
+              const og = Array.from(select.querySelectorAll('optgroup'))
+                .find(g => (g.getAttribute('label') || '').toLowerCase().trim() === (rawDropdownName || '').toLowerCase().trim());
+              if (!og) return [];
+              const opts = Array.from(og.querySelectorAll('option'));
+              // Prioritize standard open HYROX or HYROX PRO over ADAPTIVE/RELAY
+              opts.sort((a, b) => {
+                const aMain = (a.text.includes('HYROX -') || a.text.includes('HYROX PRO')) ? -1 : 1;
+                const bMain = (b.text.includes('HYROX -') || b.text.includes('HYROX PRO')) ? -1 : 1;
+                return aMain - bMain;
+              });
+              return opts.slice(0, 3).map(o => o.value);
+            }, { rawDropdownName: race.rawDropdownName }).catch(() => []);
+
+            for (const optVal of candidateOpts) {
+              await page.goto(`https://hyrox.r.mikatiming.com/${season.slug}/?event=${optVal}&pid=list&num_results=1`, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+              const count = await page.evaluate(() => document.querySelectorAll('li.list-group-item:not(.list-group-header)').length).catch(() => 0);
+              if (count > 0) {
+                console.log(`   🔥 Active results found on Mika Timing! Auto-promoting "${race.name}" from upcoming to completed.`);
+                race.status = 'completed';
+                if (race.date === `${race.id.match(/\d{4}/)?.[0] || '2026'}-12-31`) {
+                  const today = new Date().toISOString().slice(0, 10);
+                  race.date = today;
+                  race.end_date = today;
+                }
+                await upsertRaceHeader(race);
+                break;
+              }
+            }
+          }
+
+          if (race.status === 'upcoming') {
+            console.log(`   ⏩ Upcoming race — skipping division scraping (calendar already synced).`);
+            continue;
+          }
         }
 
         let raceTotal = 0;
