@@ -428,21 +428,29 @@ function getRaceMetadata(label) {
   };
 }
 
+function getCalculatedStatus(startDate, endDate) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (startDate && startDate > today) return 'upcoming';
+  if (endDate && endDate < today) return 'completed';
+  return 'live';
+}
+
 async function upsertLiveRaceHeader(race) {
   if (IS_TEST) return;
+  const status = getCalculatedStatus(race.date, race.end_date);
   const sql = `
     INSERT INTO hyrox_races (id, name, city, country, country_code, date, end_date, season, status, athletes_count)
     VALUES (
       ${esc(race.id)}, ${esc(race.name)}, ${esc(race.city)},
       ${esc(race.country)}, ${esc(race.country_code)}, ${esc(race.date)},
-      ${esc(race.end_date)}, ${esc(race.season)}, 'live', 0
+      ${esc(race.end_date)}, ${esc(race.season)}, ${esc(status)}, 0
     )
     ON CONFLICT (id) DO UPDATE SET
       name         = EXCLUDED.name,
       city         = EXCLUDED.city,
       country      = EXCLUDED.country,
       country_code = EXCLUDED.country_code,
-      status       = 'live',
+      status       = ${esc(status)},
       season       = EXCLUDED.season,
       date         = CASE 
         WHEN hyrox_races.date IS NOT NULL AND hyrox_races.date::text NOT LIKE '%12-31' THEN hyrox_races.date 
@@ -457,7 +465,7 @@ async function upsertLiveRaceHeader(race) {
   await runQuery(sql);
 }
 
-async function updateLiveRaceCount(raceId, raceEndDate) {
+async function updateLiveRaceCount(raceId, raceStartDate, raceEndDate) {
   if (IS_TEST) return 0;
   try {
     // 🛡️ Automatic Dedup Shield: Ensure no summary-bucket clones exist for this race
@@ -484,10 +492,7 @@ async function updateLiveRaceCount(raceId, raceEndDate) {
       ) s;
     `);
     const count = parseInt(res[0]?.total || 0, 10);
-
-    const today = new Date().toISOString().slice(0, 10);
-    const isPast = raceEndDate && raceEndDate < today;
-    const finalStatus = isPast ? 'completed' : 'live';
+    const finalStatus = getCalculatedStatus(raceStartDate, raceEndDate);
 
     await runQuery(`
       UPDATE hyrox_races
@@ -589,7 +594,7 @@ async function main() {
           document.querySelectorAll('li.list-group-item:not(.list-group-header)').length > 0
         );
       } catch (err) {
-        hasResults = true; // Fallback to scanning if probe fails
+        hasResults = false;
       }
 
       if (!hasResults && !FORCE_RACE) {
@@ -598,8 +603,10 @@ async function main() {
       }
 
       const race = getRaceMetadata(group.label);
+      const isPastRace = race.end_date && race.end_date < new Date().toISOString().slice(0, 10);
+      const effectiveSplitsLimit = (isPastRace && !FORCE_RACE) ? 0 : DEEP_SPLITS_LIMIT;
 
-      console.log(`   📌 Registering "${race.name}" (${race.id}) as status: "live" in Supabase...`);
+      console.log(`   📌 Registering "${race.name}" (${race.id}) in Supabase...`);
       await upsertLiveRaceHeader(race);
 
       console.log(`   ⚡ Scanning ${activeOptions.length} wave categories sequentially...\n`);
@@ -622,8 +629,8 @@ async function main() {
           if (athletes.length > 0) {
             console.log(`\n      ✅ Found ${athletes.length} athletes for [${waveText}] (${sex})`);
 
-            // Fetch deep splits for top finishers
-            const splitsToFetch = Math.min(athletes.length, DEEP_SPLITS_LIMIT);
+            // Fetch deep splits for top finishers (only for active/live races)
+            const splitsToFetch = Math.min(athletes.length, effectiveSplitsLimit);
             for (let i = 0; i < splitsToFetch; i++) {
               await scrapeSplits(page, athletes[i]);
               if ((i + 1) % 10 === 0 || i + 1 === splitsToFetch) {
@@ -640,7 +647,7 @@ async function main() {
         }
       }
 
-      const finalCount = await updateLiveRaceCount(race.id, race.end_date);
+      const finalCount = await updateLiveRaceCount(race.id, race.date, race.end_date);
       console.log(`\n   🏁 ${race.name} sync complete! Total athletes in DB: ${finalCount}`);
     }
 
