@@ -128,10 +128,12 @@ function secondsToTime(seconds) {
 async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex) {
   const athletes = [];
   const sexParam = sex ? `&search[sex]=${sex}` : '';
-  let divisionLabel = waveText;
-  if (sex === 'M') divisionLabel = waveText.replace(/\s*-\s*(Thursday|Friday|Saturday|Sunday|Monday)/i, '') + ' Men';
-  if (sex === 'W') divisionLabel = waveText.replace(/\s*-\s*(Thursday|Friday|Saturday|Sunday|Monday)/i, '') + ' Women';
-  if (sex === 'X') divisionLabel = waveText.replace(/\s*-\s*(Thursday|Friday|Saturday|Sunday|Monday)/i, '') + ' Mixed';
+  let baseLabel = waveText.replace(/\s*-\s*(Thursday|Friday|Saturday|Sunday|Monday)/i, '').trim();
+  let divisionLabel = baseLabel;
+  if (sex === 'M') divisionLabel = `${baseLabel} MEN`;
+  else if (sex === 'W') divisionLabel = `${baseLabel} WOMEN`;
+  else if (sex === 'X') divisionLabel = `${baseLabel} MIXED`;
+  divisionLabel = divisionLabel.toUpperCase().trim();
 
   for (let p = 1; p <= 50; p++) {
     const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100${sexParam}&page=${p}`;
