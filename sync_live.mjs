@@ -364,15 +364,15 @@ async function upsertLiveAthletes(athletes) {
 // ─────────────────────────────────────────────────────────────────────────────
 const KNOWN_DATES = {
   'tenerife-2026': { date: '2026-09-04', end_date: '2026-09-06' },
-  'washington-dc-sep-2026': { date: '2026-09-04', end_date: '2026-09-07' },
-  'athens-2026': { date: '2026-09-12', end_date: '2026-09-14' },
-  'acapulco-2026': { date: '2026-09-12', end_date: '2026-09-14' },
-  'perth-2026': { date: '2026-09-19', end_date: '2026-09-21' },
+  'washington-dc-sep-2026': { date: '2026-09-03', end_date: '2026-09-07' },
+  'athens-2026': { date: '2026-09-05', end_date: '2026-09-06' },
+  'acapulco-2026': { date: '2026-09-04', end_date: '2026-09-06' },
+  'beijing-sep-2026': { date: '2026-09-10', end_date: '2026-09-13' },
+  'perth-2026': { date: '2026-08-21', end_date: '2026-08-23' },
+  'shenzhen-2026': { date: '2026-08-15', end_date: '2026-08-16' },
+  'cape-town-2026': { date: '2026-08-01', end_date: '2026-08-03' },
   'bangkok-2026': { date: '2026-09-26', end_date: '2026-09-28' },
   'maastricht-2026': { date: '2026-10-03', end_date: '2026-10-05' },
-  'cape-town-2026': { date: '2026-10-10', end_date: '2026-10-12' },
-  'shenzhen-2026': { date: '2026-10-17', end_date: '2026-10-19' },
-  'beijing-2026': { date: '2026-10-24', end_date: '2026-10-26' },
   'chiba-2026': { date: '2026-10-31', end_date: '2026-11-02' },
   'istanbul-2026': { date: '2026-11-07', end_date: '2026-11-09' },
   'delhi-2026': { date: '2026-11-14', end_date: '2026-11-16' },
@@ -393,6 +393,8 @@ function getRaceMetadata(label) {
   let id = `${slug}-${year}`;
   if (slug === 'washington-dc') {
     id = `washington-dc-sep-${year}`;
+  } else if (slug === 'beijing') {
+    id = `beijing-sep-${year}`;
   }
 
   // Country & code mapping
@@ -416,7 +418,13 @@ function getRaceMetadata(label) {
   const known = KNOWN_DATES[id] || {};
   const raceDate = known.date || '2026-09-04';
   const endDate = known.end_date || (slug === 'washington-dc' ? '2026-09-07' : '2026-09-06');
-  const raceName = slug === 'washington-dc' ? `HYROX Washington DC September ${year}` : `HYROX ${city} ${year}`;
+  
+  let raceName = `HYROX ${city} ${year}`;
+  if (slug === 'washington-dc') {
+    raceName = `HYROX Washington DC September ${year}`;
+  } else if (slug === 'beijing') {
+    raceName = `HYROX Beijing September ${year}`;
+  }
 
   return {
     id,
