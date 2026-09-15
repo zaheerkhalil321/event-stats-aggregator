@@ -614,7 +614,8 @@ async function main() {
 
       const race = getRaceMetadata(group.label);
       const isPastRace = race.end_date && race.end_date < new Date().toISOString().slice(0, 10);
-      const effectiveSplitsLimit = (isPastRace && !FORCE_RACE) ? 0 : DEEP_SPLITS_LIMIT;
+      const isTargetingSpecificRace = FORCE_RACE && FORCE_RACE.toLowerCase() !== 'all';
+      const effectiveSplitsLimit = (isPastRace && !isTargetingSpecificRace) ? 0 : DEEP_SPLITS_LIMIT;
 
       console.log(`   📌 Registering "${race.name}" (${race.id}) in Supabase...`);
       await upsertLiveRaceHeader(race);
