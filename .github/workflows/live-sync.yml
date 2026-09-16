@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: 🔍 Gatekeeper: Check if any race is active today
+      - name: "🔍 Gatekeeper: Check if any race is active today"
         id: gatekeeper
         env:
           FORCE_RACE: ${{ github.event.inputs.race }}
