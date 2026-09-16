@@ -55,7 +55,8 @@ if (!IS_TEST && (!PROJECT_REF || !TOKEN)) {
 // Supabase SQL Runner with Exponential Backoff
 // ─────────────────────────────────────────────────────────────────────────────
 async function runQuery(sql, retries = 3, delayMs = 1500) {
-  if (IS_TEST) return [{ count: 0 }];
+  const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
+  if (IS_TEST && !isSelect) return [{ count: 0 }];
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -135,11 +136,22 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
   else if (sex === 'X') divisionLabel = `${baseLabel} MIXED`;
   divisionLabel = divisionLabel.toUpperCase().trim();
 
-  for (let p = 1; p <= 50; p++) {
+  let maxPages = 50;
+
+  for (let p = 1; p <= maxPages; p++) {
     const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100${sexParam}&page=${p}`;
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-      await sleep(1200);
+      await sleep(1000);
+
+      // On Page 1, detect total page count from pagination bar to avoid redundant fetches
+      if (p === 1) {
+        maxPages = await page.evaluate(() => {
+          const pageItems = Array.from(document.querySelectorAll('.pages li, .pagination li')).map(p => p.innerText.trim());
+          const numPages = pageItems.filter(t => /^\d+$/.test(t));
+          return numPages.length ? Math.max(...numPages.map(Number)) : 1;
+        });
+      }
 
       const pageAthletes = await page.evaluate(({ rId, divLabel, genderCode, sSlug }) => {
         const items = Array.from(document.querySelectorAll('li.list-group-item:not(.list-group-header)'));
@@ -189,7 +201,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
       if (!pageAthletes || pageAthletes.length === 0) break;
 
       athletes.push(...pageAthletes);
-      process.stdout.write(`      📄 [${divisionLabel}] Page ${p} (${athletes.length} athletes)\r`);
+      process.stdout.write(`      📄 [${divisionLabel}] Page ${p}/${maxPages} (${athletes.length} athletes)\r`);
 
       if (pageAthletes.length < 100) break; // Reached last page
     } catch (err) {
@@ -378,6 +390,10 @@ const KNOWN_DATES = {
   'delhi-2026': { date: '2026-11-14', end_date: '2026-11-16' },
   'mumbai-2026': { date: '2026-11-21', end_date: '2026-11-23' },
   'chengdu-2026': { date: '2026-11-28', end_date: '2026-11-30' },
+  'salt-lake-city-2026': { date: '2026-09-18', end_date: '2026-09-20' },
+  'salt-lake-city-youngstars-2026': { date: '2026-09-19', end_date: '2026-09-20' },
+  'izmir-2026': { date: '2026-09-19', end_date: '2026-09-20' },
+  'maastricht-youngstars-2026': { date: '2026-10-03', end_date: '2026-10-05' },
   'hangzhou-2026': { date: '2026-12-05', end_date: '2026-12-07' },
   'sydney-2026': { date: '2026-12-12', end_date: '2026-12-14' },
   'jakarta-2026': { date: '2026-12-19', end_date: '2026-12-21' },
@@ -404,7 +420,7 @@ function getRaceMetadata(label) {
   if (cl.includes('athens')) { country = 'Greece'; countryCode = 'GR'; }
   else if (cl.includes('acapulco') || cl.includes('cancun') || cl.includes('mexico')) { country = 'Mexico'; countryCode = 'MX'; }
   else if (cl.includes('tenerife') || cl.includes('madrid') || cl.includes('barcelona') || cl.includes('valencia') || cl.includes('malaga') || cl.includes('bilbao')) { country = 'Spain'; countryCode = 'ES'; }
-  else if (cl.includes('washington') || cl.includes('new york') || cl.includes('chicago') || cl.includes('miami') || cl.includes('houston') || cl.includes('dallas') || cl.includes('phoenix') || cl.includes('las vegas')) { country = 'United States'; countryCode = 'US'; }
+  else if (cl.includes('washington') || cl.includes('new york') || cl.includes('chicago') || cl.includes('miami') || cl.includes('houston') || cl.includes('dallas') || cl.includes('phoenix') || cl.includes('las vegas') || cl.includes('salt lake city')) { country = 'United States'; countryCode = 'US'; }
   else if (cl.includes('perth') || cl.includes('sydney') || cl.includes('melbourne') || cl.includes('brisbane')) { country = 'Australia'; countryCode = 'AU'; }
   else if (cl.includes('bangkok')) { country = 'Thailand'; countryCode = 'TH'; }
   else if (cl.includes('cape town')) { country = 'South Africa'; countryCode = 'ZA'; }
@@ -416,8 +432,8 @@ function getRaceMetadata(label) {
   else if (cl.includes('maastricht') || cl.includes('amsterdam')) { country = 'Netherlands'; countryCode = 'NL'; }
 
   const known = KNOWN_DATES[id] || {};
-  const raceDate = known.date || '2026-09-04';
-  const endDate = known.end_date || (slug === 'washington-dc' ? '2026-09-07' : '2026-09-06');
+  const raceDate = known.date || '2026-12-31';
+  const endDate = known.end_date || '2026-12-31';
   
   let raceName = `HYROX ${city} ${year}`;
   if (slug === 'washington-dc') {
@@ -463,11 +479,13 @@ async function upsertLiveRaceHeader(race) {
       status       = ${esc(status)},
       season       = EXCLUDED.season,
       date         = CASE 
-        WHEN hyrox_races.date IS NOT NULL AND hyrox_races.date::text NOT LIKE '%12-31' THEN hyrox_races.date 
+        WHEN EXCLUDED.date::text NOT LIKE '%12-31' THEN EXCLUDED.date
+        WHEN hyrox_races.date IS NOT NULL THEN hyrox_races.date 
         ELSE EXCLUDED.date 
       END,
       end_date     = CASE 
-        WHEN hyrox_races.end_date IS NOT NULL AND hyrox_races.end_date::text NOT LIKE '%12-31' THEN hyrox_races.end_date 
+        WHEN EXCLUDED.end_date::text NOT LIKE '%12-31' THEN EXCLUDED.end_date
+        WHEN hyrox_races.end_date IS NOT NULL THEN hyrox_races.end_date 
         ELSE EXCLUDED.end_date 
       END,
       updated_at   = NOW();
@@ -515,6 +533,49 @@ async function updateLiveRaceCount(raceId, raceStartDate, raceEndDate) {
   }
 }
 
+async function getExistingRacesMap() {
+  try {
+    const res = await runQuery(`
+      SELECT id, status, athletes_count, date, end_date 
+      FROM hyrox_races;
+    `);
+    const map = new Map();
+    if (Array.isArray(res)) {
+      for (const r of res) {
+        map.set(r.id, {
+          status: r.status,
+          athletes_count: parseInt(r.athletes_count || 0, 10),
+          date: r.date,
+          end_date: r.end_date,
+        });
+      }
+    }
+    return map;
+  } catch (err) {
+    return new Map();
+  }
+}
+
+async function getRaceDivisionCounts(raceId) {
+  try {
+    const res = await runQuery(`
+      SELECT division, count(*) as count 
+      FROM hyrox_athlete_results 
+      WHERE race_id = ${esc(raceId)} 
+      GROUP BY division;
+    `);
+    const map = new Map();
+    if (Array.isArray(res)) {
+      for (const r of res) {
+        map.set(r.division.toUpperCase().trim(), parseInt(r.count || 0, 10));
+      }
+    }
+    return map;
+  } catch (err) {
+    return new Map();
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Live Sync Orchestrator
 // ─────────────────────────────────────────────────────────────────────────────
@@ -543,6 +604,9 @@ async function main() {
   console.log('🌐 Connected to headless browser session.');
 
   try {
+    const existingRacesMap = await getExistingRacesMap();
+    console.log(`📊 Loaded database state for ${existingRacesMap.size} existing races.`);
+
     const seasonSlug = 'season-9';
     const listUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
     await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -594,6 +658,26 @@ async function main() {
         continue;
       }
 
+      const race = getRaceMetadata(group.label);
+      const isPastRace = race.end_date && race.end_date < new Date().toISOString().slice(0, 10);
+      const isFutureRace = race.date && race.date > new Date().toISOString().slice(0, 10);
+      const isTargetingSpecificRace = FORCE_RACE && FORCE_RACE.toLowerCase() !== 'all';
+      const effectiveSplitsLimit = (isPastRace && !isTargetingSpecificRace) ? 0 : DEEP_SPLITS_LIMIT;
+
+      // 🛡️ 1. RACE-LEVEL CHECKPOINT: If past race is already completed with real count in DB, SKIP!
+      const existing = existingRacesMap.get(race.id);
+      if (isPastRace && !isTargetingSpecificRace && existing && existing.status === 'completed' && existing.athletes_count > 500) {
+        console.log(`   ⏩ [RACE COMPLETE] "${race.name}" (${race.id}) already has ${existing.athletes_count} athletes in DB. Skipping entire race in 0.01s!`);
+        continue;
+      }
+
+      // 🛡️ 2. UPCOMING RACE CHECKPOINT: If race start date is in the future, register header & skip!
+      if (isFutureRace && !isTargetingSpecificRace) {
+        console.log(`   ⏩ [UPCOMING RACE] "${race.name}" (${race.id}) scheduled for ${race.date}. Skipping until event weekend.`);
+        await upsertLiveRaceHeader(race);
+        continue;
+      }
+
       // ⚡ Pre-flight check: verify if any results exist for this event before deep scanning
       const probeOpt = activeOptions[0];
       let hasResults = false;
@@ -601,25 +685,19 @@ async function main() {
         const probeUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${probeOpt.val}&pid=list&num_results=1`;
         await page.goto(probeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
         hasResults = await page.evaluate(() => 
-          document.querySelectorAll('li.list-group-item:not(.list-group-header)').length > 0
+          document.querySelectorAll('li.list-group-item a[href*="content=detail"]').length > 0
         );
       } catch (err) {
         hasResults = false;
       }
 
-      if (!hasResults && !FORCE_RACE) {
+      if (!hasResults && !isTargetingSpecificRace) {
         console.log(`   ⏩ [PRE-FLIGHT] No active heats or results yet for "${group.label}". Skipping.`);
         continue;
       }
 
-      const race = getRaceMetadata(group.label);
-      const isPastRace = race.end_date && race.end_date < new Date().toISOString().slice(0, 10);
-      const isTargetingSpecificRace = FORCE_RACE && FORCE_RACE.toLowerCase() !== 'all';
-      const effectiveSplitsLimit = (isPastRace && !isTargetingSpecificRace) ? 0 : DEEP_SPLITS_LIMIT;
-
       console.log(`   📌 Registering "${race.name}" (${race.id}) in Supabase...`);
       await upsertLiveRaceHeader(race);
-
       console.log(`   ⚡ Scanning ${activeOptions.length} wave categories sequentially...\n`);
 
       let totalRaceAthletes = 0;
