@@ -1,41 +1,71 @@
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// 1. Check if user manually requested a specific race or full sync via dispatch
-const forceRace = process.env.FORCE_RACE;
-const isManualDispatch = process.env.IS_MANUAL_DISPATCH === 'true';
-
-if (isManualDispatch && forceRace && forceRace.trim() !== '') {
-  console.log(`🎯 Manual workflow dispatch with target: "${forceRace}". Proceeding with sync.`);
-  if (process.env.GITHUB_OUTPUT) {
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, 'active=true\n');
-  }
-  process.exit(0);
+export function getKnownDates() {
+  const code = fs.readFileSync('sync_live.mjs', 'utf8');
+  const match = code.match(/const KNOWN_DATES = ({[\s\S]*?});/);
+  return match ? eval('(' + match[1] + ')') : {};
 }
 
-// 2. Read verified dates from sync_live.mjs
-const code = fs.readFileSync('sync_live.mjs', 'utf8');
-const match = code.match(/const KNOWN_DATES = ({[\s\S]*?});/);
-const dates = match ? eval('(' + match[1] + ')') : {};
+export function evaluateGatekeeper({
+  forceRace = process.env.FORCE_RACE,
+  isManualDispatch = process.env.IS_MANUAL_DISPATCH === 'true',
+  today = new Date().toISOString().slice(0, 10),
+  dates = null,
+} = {}) {
+  // 1. If manual dispatch specifies a target (or 'all'), allow it to proceed
+  if (isManualDispatch && forceRace && forceRace.trim() !== '') {
+    return {
+      active: true,
+      reason: `Manual workflow dispatch with target: "${forceRace}"`,
+      activeRaces: []
+    };
+  }
 
-const today = new Date().toISOString().slice(0, 10);
-const activeRaces = Object.entries(dates).filter(([id, d]) => {
-  return today >= d.date && today <= d.end_date;
-});
+  // 2. Check known calendar dates
+  const raceDates = dates || getKnownDates();
+  const activeRaces = Object.entries(raceDates).filter(([id, d]) => {
+    return today >= d.date && today <= d.end_date;
+  });
 
-if (activeRaces.length > 0) {
-  console.log(`🔥 [LIVE GATEKEEPER] ${activeRaces.length} race(s) active today (${today}):`);
-  for (const [id, d] of activeRaces) {
-    console.log(`   🏁 ${id} (${d.date} to ${d.end_date})`);
+  if (activeRaces.length > 0) {
+    return {
+      active: true,
+      reason: `${activeRaces.length} race(s) active today (${today})`,
+      activeRaces: activeRaces.map(([id, d]) => ({ id, ...d }))
+    };
   }
-  if (process.env.GITHUB_OUTPUT) {
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, 'active=true\n');
+
+  return {
+    active: false,
+    reason: `No HYROX races active today (${today})`,
+    activeRaces: []
+  };
+}
+
+// Direct CLI execution block
+const isMain = process.argv[1] && (
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+);
+
+if (isMain) {
+  const result = evaluateGatekeeper();
+  if (result.active) {
+    console.log(`🔥 [LIVE GATEKEEPER] ${result.reason}`);
+    for (const r of result.activeRaces) {
+      console.log(`   🏁 ${r.id} (${r.date} to ${r.end_date})`);
+    }
+    if (process.env.GITHUB_OUTPUT) {
+      fs.appendFileSync(process.env.GITHUB_OUTPUT, 'active=true\n');
+    }
+    process.exit(0);
+  } else {
+    console.log(`☕ [LIVE GATEKEEPER] ${result.reason}`);
+    console.log('   ⏩ Skipping npm install, Playwright browser install, and scraper execution. Exiting in 0.1s!');
+    if (process.env.GITHUB_OUTPUT) {
+      fs.appendFileSync(process.env.GITHUB_OUTPUT, 'active=false\n');
+    }
+    process.exit(0);
   }
-  process.exit(0);
-} else {
-  console.log(`☕ [LIVE GATEKEEPER] No HYROX races active today (${today}).`);
-  console.log('   ⏩ Skipping npm install, Playwright browser install, and scraper execution. Exiting in 0.1s!');
-  if (process.env.GITHUB_OUTPUT) {
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, 'active=false\n');
-  }
-  process.exit(0);
 }

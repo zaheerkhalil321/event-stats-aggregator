@@ -6,7 +6,8 @@
   "main": "sync_events.mjs",
   "scripts": {
     "sync": "node sync_events.mjs",
-    "sync:test": "node sync_events.mjs --test"
+    "sync:test": "node sync_events.mjs --test",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
