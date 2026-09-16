@@ -45,13 +45,23 @@ jobs:
         with:
           node-version: '22'
 
+      - name: 🔍 Gatekeeper: Check if any race is active today
+        id: gatekeeper
+        env:
+          FORCE_RACE: ${{ github.event.inputs.race }}
+          IS_MANUAL_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node check_active_today.mjs
+
       - name: 📥 Install dependencies
+        if: steps.gatekeeper.outputs.active == 'true'
         run: npm install
 
       - name: 🌐 Install Playwright Chromium browser
+        if: steps.gatekeeper.outputs.active == 'true'
         run: npx playwright install chromium --with-deps
 
       - name: ⚡ Run Live Sync Engine
+        if: steps.gatekeeper.outputs.active == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
