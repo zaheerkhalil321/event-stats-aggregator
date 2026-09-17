@@ -792,6 +792,7 @@ async function main() {
     console.log('='.repeat(68) + '\n');
   } catch (err) {
     console.error('\n❌ Fatal error in live sync:', err);
+    process.exitCode = 1;
   } finally {
     await browser.close();
   }
