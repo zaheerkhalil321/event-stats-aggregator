@@ -2,8 +2,8 @@ name: ⚡ Live Weekend Sync
 
 on:
   schedule:
-    # Run every 20 minutes between 06:00 and 22:59 UTC on Friday, Saturday, and Sunday (Race Days)
-    - cron: '*/20 6-22 * * 5,6,0'
+    # Run every 20 minutes between 06:00 and 22:59 UTC on Thursday, Friday, Saturday, and Sunday (Race Days)
+    - cron: '*/20 6-22 * * 4,5,6,0'
 
   # Allow manual trigger with optional race target, splits depth, or dry-run
   workflow_dispatch:
