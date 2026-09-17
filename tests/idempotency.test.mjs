@@ -21,7 +21,7 @@ function deduplicateBatch(athletes) {
 function buildUpsertQuery(raceId, athletes) {
   if (!athletes.length) return null;
   return `
-    INSERT INTO hyrox_athletes (
+    INSERT INTO hyrox_athlete_results (
       race_id, full_name, division, gender, bib, rank_overall, finish_time
     ) VALUES ...
     ON CONFLICT (race_id, full_name, division) 
