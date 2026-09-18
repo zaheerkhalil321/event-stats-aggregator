@@ -23,11 +23,16 @@
 
 import dotenv from 'dotenv';
 import { chromium } from 'playwright';
+import { createClient } from '@libsql/client';
 
 dotenv.config();
 
+const TURSO_URL = process.env.TURSO_DATABASE_URL;
+const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF;
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+
+const turso = (TURSO_URL && TURSO_TOKEN) ? createClient({ url: TURSO_URL, authToken: TURSO_TOKEN }) : null;
 
 const IS_TEST = process.argv.includes('--test') || process.argv.includes('--dry-run');
 const FORCE_RACE = process.argv.find(arg => arg.startsWith('--race='))?.split('=')[1]
@@ -42,22 +47,44 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 console.log('\n' + '='.repeat(68));
 console.log('  ⚡ HYROX LIVE & WEEKEND RACE ENGINE');
 console.log('  Target: Active Live Heats (Season 9 / Current Weekends)');
-console.log(`  Mode:   ${IS_TEST ? 'DRY-RUN (No DB Writes)' : 'LIVE → Supabase Production'}`);
+console.log(`  Mode:   ${IS_TEST ? 'DRY-RUN (No DB Writes)' : (turso ? 'LIVE → Turso Cloud ⚡' : 'LIVE → Supabase')}`);
 if (FORCE_RACE) console.log(`  Filter: "${FORCE_RACE}"`);
 console.log('='.repeat(68) + '\n');
 
-if (!IS_TEST && (!PROJECT_REF || !TOKEN)) {
-  console.error('❌ Missing SUPABASE_PROJECT_REF or SUPABASE_ACCESS_TOKEN in .env');
+if (!IS_TEST && !turso && (!PROJECT_REF || !TOKEN)) {
+  console.error('❌ Missing TURSO_DATABASE_URL or SUPABASE credentials in .env');
   process.exit(1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Supabase SQL Runner with Exponential Backoff
+// Database Query Runner (Turso Cloud primary, with Supabase fallback)
 // ─────────────────────────────────────────────────────────────────────────────
 async function runQuery(sql, retries = 3, delayMs = 1500) {
   const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
   if (IS_TEST && !isSelect) return [{ count: 0 }];
 
+  // ⚡ 1. Primary: Turso Cloud Execution
+  if (turso) {
+    const cleanSql = sql
+      .replace(/::text/gi, '')
+      .replace(/\bNOW\(\)/gi, 'CURRENT_TIMESTAMP');
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const res = await turso.execute(cleanSql);
+        return res.rows;
+      } catch (err) {
+        if (attempt < retries) {
+          await sleep(delayMs);
+          delayMs *= 2;
+          continue;
+        }
+        throw new Error(`Turso error: ${err.message}`);
+      }
+    }
+  }
+
+  // 2. Fallback: Supabase SQL API
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await fetch(
@@ -545,16 +572,22 @@ async function updateLiveRaceCount(raceId, raceStartDate, raceEndDate) {
   try {
     // 🛡️ Automatic Dedup Shield: Ensure no summary-bucket clones exist for this race
     await runQuery(`
-      DELETE FROM hyrox_athlete_results a_open
-      USING hyrox_athlete_results a_pro
-      WHERE a_open.race_id = ${esc(raceId)}
-        AND a_pro.race_id = ${esc(raceId)}
-        AND a_open.full_name = a_pro.full_name
-        AND a_open.total_time = a_pro.total_time
-        AND a_open.overall_rank = a_pro.overall_rank
-        AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
-        AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
-        AND a_open.id != a_pro.id;
+      DELETE FROM hyrox_athlete_results
+      WHERE race_id = ${esc(raceId)}
+        AND division IN ('HYROX MEN', 'HYROX WOMEN')
+        AND id IN (
+          SELECT a_open.id
+          FROM hyrox_athlete_results a_open
+          JOIN hyrox_athlete_results a_pro
+            ON a_open.race_id = a_pro.race_id
+           AND a_open.full_name = a_pro.full_name
+           AND a_open.total_time = a_pro.total_time
+           AND a_open.overall_rank = a_pro.overall_rank
+          WHERE a_open.race_id = ${esc(raceId)}
+            AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
+            AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
+            AND a_open.id != a_pro.id
+        );
     `);
 
     const res = await runQuery(`
