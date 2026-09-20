@@ -71,9 +71,20 @@ describe('Gatekeeper Engine (check_active_today.mjs)', () => {
     assert.strictEqual(res.activeRaces.length, 2);
   });
 
-  it('TC5: Should return active=false the day after a race completes', () => {
+  it('TC5: Should return active=true on Monday for 1-day Post-Race Wrap-Up window', () => {
     const res = evaluateGatekeeper({
       today: '2026-09-21',
+      dates: mockCalendar,
+      isManualDispatch: false
+    });
+    assert.strictEqual(res.active, true);
+    assert.strictEqual(res.activeRaces.length, 2);
+    assert.ok(res.activeRaces.every(r => r.isWrapUp === true));
+  });
+
+  it('TC5b: Should return active=false 2 days after race completion (Tuesday off-day)', () => {
+    const res = evaluateGatekeeper({
+      today: '2026-09-22',
       dates: mockCalendar,
       isManualDispatch: false
     });

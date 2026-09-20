@@ -8,6 +8,12 @@ export function getKnownDates() {
   return match ? eval('(' + match[1] + ')') : {};
 }
 
+export function getWrapUpDate(endDateStr) {
+  const d = new Date(endDateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function evaluateGatekeeper({
   forceRace = process.env.FORCE_RACE,
   isManualDispatch = process.env.IS_MANUAL_DISPATCH === 'true',
@@ -23,17 +29,24 @@ export function evaluateGatekeeper({
     };
   }
 
-  // 2. Check known calendar dates
+  // 2. Check known calendar dates (including 1-day Post-Race Wrap-Up window)
   const raceDates = dates || getKnownDates();
   const activeRaces = Object.entries(raceDates).filter(([id, d]) => {
-    return today >= d.date && today <= d.end_date;
+    const wrapUpDate = getWrapUpDate(d.end_date);
+    return today >= d.date && today <= wrapUpDate;
   });
 
   if (activeRaces.length > 0) {
+    const wrapUpCount = activeRaces.filter(([id, d]) => today === getWrapUpDate(d.end_date)).length;
+    const modeLabel = wrapUpCount > 0 ? ` (including ${wrapUpCount} race(s) in Monday wrap-up)` : '';
     return {
       active: true,
-      reason: `${activeRaces.length} race(s) active today (${today})`,
-      activeRaces: activeRaces.map(([id, d]) => ({ id, ...d }))
+      reason: `${activeRaces.length} race(s) active today (${today})${modeLabel}`,
+      activeRaces: activeRaces.map(([id, d]) => ({ 
+        id, 
+        ...d,
+        isWrapUp: today === getWrapUpDate(d.end_date)
+      }))
     };
   }
 
