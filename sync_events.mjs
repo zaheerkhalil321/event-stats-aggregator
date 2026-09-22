@@ -21,24 +21,24 @@
  *   npx playwright install chromium
  */
 
+import dotenv from 'dotenv';
 import { chromium } from 'playwright';
+import { createClient } from '@libsql/client';
 import * as fs from 'fs';
 import { readFileSync, existsSync } from 'fs';
 import { syncOfficialCalendar } from './sync_calendar.mjs';
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Config & Auto-load .env
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-if (!process.env.SUPABASE_ACCESS_TOKEN && existsSync('.env')) {
-  const envContent = readFileSync('.env', 'utf-8');
-  const match = envContent.match(/SUPABASE_ACCESS_TOKEN=([^\r\n]+)/);
-  if (match) process.env.SUPABASE_ACCESS_TOKEN = match[1].trim();
-}
+dotenv.config();
 
-const tokenArgIndex = process.argv.indexOf('--token');
-const TOKEN = process.env.SUPABASE_ACCESS_TOKEN
-  || (tokenArgIndex !== -1 ? process.argv[tokenArgIndex + 1] : null);
-const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'jxvwccqhnkteeqeerjua';
+// ─────────────────────────────────────────────────────────────────────────────
+// Config & Database Credentials
+// ─────────────────────────────────────────────────────────────────────────────
+const TURSO_URL = process.env.TURSO_DATABASE_URL;
+const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF;
+const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+
+const turso = (TURSO_URL && TURSO_TOKEN) ? createClient({ url: TURSO_URL, authToken: TURSO_TOKEN }) : null;
 
 const IS_TEST = process.argv.includes('--test') || process.argv.includes('--dry-run');
 const IS_DRY_RUN = IS_TEST;
@@ -107,56 +107,91 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Banner
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 console.log('='.repeat(68));
-console.log('  ðŸƒ HYROX Full Data Pipeline â€” RoxDay (Playwright Edition)');
-console.log(`  ðŸ•’ Started: ${new Date().toISOString()}`);
-console.log(`  ðŸŽ¯ Mode: ${IS_TEST ? 'DRY-RUN (no DB writes)' : 'LIVE â†’ Supabase'}`);
-if (FORCE_SEASON) console.log(`  ðŸ“… Season: ${FORCE_SEASON}`);
+console.log('  🏃 HYROX Full Data Pipeline — RoxDay (Playwright Edition)');
+console.log(`  🕒 Started: ${new Date().toISOString()}`);
+console.log(`  🎯 Mode: ${IS_TEST ? 'DRY-RUN (no DB writes)' : (turso ? 'LIVE → Turso Cloud ⚡' : 'LIVE → Supabase')}`);
+if (FORCE_SEASON) console.log(`  📅 Season: ${FORCE_SEASON}`);
 console.log('='.repeat(68) + '\n');
 
-if (!IS_TEST && !TOKEN) {
-  console.error('âŒ Missing SUPABASE_ACCESS_TOKEN.');
+if (!IS_TEST && !turso && (!PROJECT_REF || !TOKEN)) {
+  console.error('❌ Missing TURSO_DATABASE_URL or SUPABASE credentials in .env');
   process.exit(1);
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
+// Database Query Runner (Turso Cloud primary, with Supabase fallback)
+// ─────────────────────────────────────────────────────────────────────────────
 async function runQuery(sql, retries = 3, delayMs = 1500) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(
-        `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`,
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: sql }),
-        },
-      );
-      if (res.status === 429 || res.status >= 500) {
-        const errorText = await res.text().catch(() => '');
-        console.warn(`   âš ï¸ Supabase rate-limit/server (${res.status}) on attempt ${attempt}/${retries}. Retrying in ${delayMs}ms...`);
+  const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
+  if (IS_TEST && !isSelect) return [{ count: 0 }];
+
+  // ⚡ 1. Primary: Turso Cloud Execution
+  if (turso) {
+    const cleanSql = sql
+      .replace(/::text/gi, '')
+      .replace(/::date/gi, '')
+      .replace(/::timestamptz/gi, '')
+      .replace(/\bGREATEST\b/gi, 'MAX')
+      .replace(/\bTRUNCATE\s+TABLE\s+([a-zA-Z0-9_]+)/gi, 'DELETE FROM $1')
+      .replace(/\bNOW\(\)/gi, 'CURRENT_TIMESTAMP');
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const res = await turso.execute(cleanSql);
+        return res.rows;
+      } catch (err) {
         if (attempt < retries) {
           await sleep(delayMs);
           delayMs *= 2;
           continue;
         }
-        throw new Error(`Supabase (${res.status}): ${errorText.slice(0, 300)}`);
+        throw new Error(`Turso error: ${err.message}`);
       }
-      if (!res.ok) throw new Error(`Supabase (${res.status}): ${(await res.text()).slice(0, 300)}`);
-      return res.json();
-    } catch (err) {
-      if (attempt < retries && (err.message.includes('429') || err.message.includes('fetch failed'))) {
-        console.warn(`   âš ï¸ Supabase connection error: ${err.message}. Retrying in ${delayMs}ms...`);
-        await sleep(delayMs);
-        delayMs *= 2;
-        continue;
-      }
-      throw err;
     }
   }
+
+  // 2. Fallback: Supabase SQL API
+  if (TOKEN && PROJECT_REF) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(
+          `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`,
+          {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: sql }),
+          },
+        );
+        if (res.status === 429 || res.status >= 500) {
+          const errorText = await res.text().catch(() => '');
+          console.warn(`   ⚠️ Supabase rate-limit/server (${res.status}) on attempt ${attempt}/${retries}. Retrying in ${delayMs}ms...`);
+          if (attempt < retries) {
+            await sleep(delayMs);
+            delayMs *= 2;
+            continue;
+          }
+          throw new Error(`Supabase (${res.status}): ${errorText.slice(0, 300)}`);
+        }
+        if (!res.ok) throw new Error(`Supabase (${res.status}): ${(await res.text()).slice(0, 300)}`);
+        return res.json();
+      } catch (err) {
+        if (attempt < retries && (err.message.includes('429') || err.message.includes('fetch failed'))) {
+          console.warn(`   ⚠️ Supabase connection error: ${err.message}. Retrying in ${delayMs}ms...`);
+          await sleep(delayMs);
+          delayMs *= 2;
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  throw new Error('No database connection available (neither Turso nor Supabase).');
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // Base URL for a season
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 function seasonBaseUrl(seasonSlug) {
   return `https://hyrox.r.mikatiming.com/${seasonSlug}/`;
 }
@@ -839,7 +874,7 @@ async function updateRaceAthleteCountLive(raceId, count) {
   try {
     await runQuery(`
       UPDATE hyrox_races
-      SET athletes_count = GREATEST(COALESCE(athletes_count, 0), ${count}),
+      SET athletes_count = MAX(COALESCE(athletes_count, 0), ${count}),
           updated_at = NOW()
       WHERE id = '${raceId}';
     `);
@@ -993,15 +1028,9 @@ async function initSyncLogTable() {
         race_id text NOT NULL,
         division text NOT NULL,
         athlete_count int NOT NULL,
-        synced_at timestamptz DEFAULT now(),
+        synced_at text DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (race_id, division)
       );
-
-      ALTER TABLE hyrox_races ADD COLUMN IF NOT EXISTS course_map_url text;
-      ALTER TABLE hyrox_races ADD COLUMN IF NOT EXISTS lap_instructions text;
-      ALTER TABLE hyrox_races ADD COLUMN IF NOT EXISTS athlete_guide_url text;
-      ALTER TABLE hyrox_races ADD COLUMN IF NOT EXISTS lat float8;
-      ALTER TABLE hyrox_races ADD COLUMN IF NOT EXISTS lng float8;
     `);
 
     if (FORCE_RESYNC) {
@@ -1196,7 +1225,7 @@ const MASTER_RACE_DATES = {
 async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
   const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-  await page.waitForSelector('select[name="event_main_group"], select[name="event"]', { timeout: 6000 }).catch(() => { });
+  await page.waitForSelector('select[name="event"] optgroup, select[name="event_main_group"]', { state: 'attached', timeout: 15000 }).catch(() => { });
 
   const raceOptions = await page.evaluate(() => {
     // Format A (Season 7): select[name="event_main_group"]
@@ -1295,16 +1324,22 @@ async function updateRaceAthleteCount(raceId) {
   try {
     // 🛡️ Automatic Dedup Shield: Ensure no summary-bucket clones exist for this race
     await runQuery(`
-      DELETE FROM hyrox_athlete_results a_open
-      USING hyrox_athlete_results a_pro
-      WHERE a_open.race_id = ${esc(raceId)}
-        AND a_pro.race_id = ${esc(raceId)}
-        AND a_open.full_name = a_pro.full_name
-        AND a_open.total_time = a_pro.total_time
-        AND a_open.overall_rank = a_pro.overall_rank
-        AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
-        AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
-        AND a_open.id != a_pro.id;
+      DELETE FROM hyrox_athlete_results
+      WHERE race_id = ${esc(raceId)}
+        AND division IN ('HYROX MEN', 'HYROX WOMEN')
+        AND id IN (
+          SELECT a_open.id
+          FROM hyrox_athlete_results a_open
+          JOIN hyrox_athlete_results a_pro
+            ON a_open.race_id = a_pro.race_id
+           AND a_open.full_name = a_pro.full_name
+           AND a_open.total_time = a_pro.total_time
+           AND a_open.overall_rank = a_pro.overall_rank
+          WHERE a_open.race_id = ${esc(raceId)}
+            AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
+            AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
+            AND a_open.id != a_pro.id
+        );
     `);
 
     const res = await runQuery(`

@@ -60,6 +60,8 @@ jobs:
       - name: ⚡ Execute Ingest for ${{ matrix.season }}
         if: github.event.inputs.season == 'all' || github.event.inputs.season == '' || github.event.inputs.season == null || github.event.inputs.season == matrix.season
         env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
