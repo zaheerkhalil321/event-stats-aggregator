@@ -1,0 +1,57 @@
+name: 🌍 Backfill Athlete Nationalities
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to scan (season-8, season-7, season-9, or all)'
+        required: true
+        default: 'season-8'
+        type: choice
+        options: ['season-8', 'season-7', 'season-9', 'all']
+      race:
+        description: 'Optional: Target specific race ID (e.g. buenos-aires-2026, new-york-2026)'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Dry run (no DB writes)?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  backfill:
+    name: Backfill Nationalities
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        run: npm install
+
+      - name: ⚡ Run Fast Nationality Backfiller
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.season }}" != "all" ]; then
+            ARGS="$ARGS --season=${{ github.event.inputs.season }}"
+          fi
+          if [ -n "${{ github.event.inputs.race }}" ]; then
+            ARGS="$ARGS --race=${{ github.event.inputs.race }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          node sync_nationalities.mjs $ARGS

@@ -186,7 +186,8 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
         for (const item of items) {
           const link = item.querySelector('a[href*="content=detail"]');
           if (!link) continue;
-          const fullName = link.textContent?.trim();
+          const rawFullName = link.textContent?.trim() || '';
+          const fullName = rawFullName.replace(/\s*\([A-Za-z]{2,3}\)$/i, '').trim();
           if (!fullName) continue;
 
           const rankEl = item.querySelector('.type-place.place-primary, .type-place');
@@ -202,8 +203,8 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
           const bibEl = item.querySelector('.type-start_number');
           const bib = bibEl?.textContent?.replace(/Start\s*Number|Bib/gi, '')?.trim() || null;
 
-          const natEl = item.querySelector('.country-flag, .type-nation');
-          const nation = natEl ? (natEl.getAttribute('title') || natEl.textContent)?.trim()?.slice(0, 3)?.toUpperCase() : 'XX';
+          const natEl = item.querySelector('.nation__abbr, .nation__icon, .country-flag, .type-nation');
+          const nation = natEl ? (natEl.getAttribute('title') || natEl.textContent)?.trim()?.slice(0, 3)?.toUpperCase() : (rawFullName.match(/\(([A-Za-z]{2,3})\)$/)?.[1]?.toUpperCase() || 'XX');
 
           const href = link.getAttribute('href') || '';
           const cleanHref = href.startsWith('/') ? href.slice(1) : href;

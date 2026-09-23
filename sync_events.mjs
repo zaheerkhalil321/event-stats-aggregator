@@ -209,8 +209,15 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
     const block = match[1];
     const rankMatch = block.match(/type-place[^>]*>(\d+)<\/div>/i);
     const linkMatch = block.match(/href="([^"]*content=detail[^"]*)"[^>]*>([^<]+)<\/a>/i);
-    const nationMatch = block.match(/country-flag[^>]*title="([^"]+)"/i)
+    const rawFullName = linkMatch ? linkMatch[2].trim() : '';
+    const cleanFullName = rawFullName.replace(/\s*\([A-Za-z]{2,3}\)$/i, '').trim();
+
+    const nationMatch = block.match(/class="nation__abbr"[^>]*>([A-Za-z]{2,3})</i)
+      || block.match(/class="nation__icon"[^>]*title="([A-Za-z]{2,3})"/i)
+      || rawFullName.match(/\(([A-Za-z]{2,3})\)$/)
+      || block.match(/country-flag[^>]*title="([^"]+)"/i)
       || block.match(/type-nation[^>]*>([^<]+)<\/div>/i);
+
     const timeMatch = block.match(/type-time[^>]*>([\d:]+)<\/div>/i)
       || block.match(/(\d{1,2}:\d{2}:\d{2})/);
     const ageMatch = block.match(/type-age_class[^>]*>([^<]+)<\/div>/i);
@@ -230,15 +237,13 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
       detailUrl += (detailUrl.includes('?') ? '&' : '?') + `event_main_group=${encodeURIComponent(rawDropdownName)}`;
     }
 
-
-    const fullName = linkMatch[2].trim();
-    const dedupKey = `${fullName.toLowerCase()}:::${detailUrl}`;
+    const dedupKey = `${cleanFullName.toLowerCase()}:::${detailUrl}`;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
 
     athletes.push({
       race_id: raceId,
-      full_name: fullName,
+      full_name: cleanFullName,
       detail_url: detailUrl,
       overall_rank: rankMatch ? parseInt(rankMatch[1], 10) : null,
       total_time: timeMatch ? (Array.isArray(timeMatch) ? timeMatch[1] : timeMatch) : null,

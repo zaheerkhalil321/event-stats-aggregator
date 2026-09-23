@@ -1,0 +1,515 @@
+[
+  {
+    "id": "maastricht-2025",
+    "name": "HYROX Maastricht 2025",
+    "season": "25/26",
+    "dbRows": 7124,
+    "dbHuman": 11138,
+    "mikaGroup": "2025 Maastricht",
+    "optionsCount": 20
+  },
+  {
+    "id": "bilbao-2025",
+    "name": "HYROX Bilbao 2025",
+    "season": "24/25",
+    "dbRows": 2791,
+    "dbHuman": 3870,
+    "mikaGroup": "2025 Bilbao",
+    "optionsCount": 17
+  },
+  {
+    "id": "miami-beach-2025",
+    "name": "HYROX Miami Beach 2025",
+    "season": "24/25",
+    "dbRows": 3664,
+    "dbHuman": 5532,
+    "mikaGroup": "2025 Miami Beach",
+    "optionsCount": 6
+  },
+  {
+    "id": "glasgow-2025",
+    "name": "HYROX Glasgow 2025",
+    "season": "24/25",
+    "dbRows": 11048,
+    "dbHuman": 17110,
+    "mikaGroup": "2025 Glasgow",
+    "optionsCount": 22
+  },
+  {
+    "id": "atlanta-2025",
+    "name": "HYROX Atlanta 2025",
+    "season": "25/26",
+    "dbRows": 4048,
+    "dbHuman": 5980,
+    "mikaGroup": "2025 Atlanta",
+    "optionsCount": 13
+  },
+  {
+    "id": "bangkok-2025",
+    "name": "HYROX Bangkok 2025",
+    "season": "24/25",
+    "dbRows": 7873,
+    "dbHuman": 11272,
+    "mikaGroup": "2025 Bangkok",
+    "optionsCount": 14
+  },
+  {
+    "id": "monterrey-2025",
+    "name": "HYROX Monterrey 2025",
+    "season": "24/25",
+    "dbRows": 2577,
+    "dbHuman": 3984,
+    "mikaGroup": "2025 Monterrey",
+    "optionsCount": 6
+  },
+  {
+    "id": "shanghai-2025",
+    "name": "HYROX Shanghai 2025",
+    "season": "24/25",
+    "dbRows": 1662,
+    "dbHuman": 2957,
+    "mikaGroup": "2025 Shanghai",
+    "optionsCount": 6
+  },
+  {
+    "id": "cologne-2025",
+    "name": "HYROX Cologne 2025",
+    "season": "24/25",
+    "dbRows": 6268,
+    "dbHuman": 9569,
+    "mikaGroup": "2025 Cologne",
+    "optionsCount": 27
+  },
+  {
+    "id": "malaga-2025",
+    "name": "HYROX Malaga 2025",
+    "season": "24/25",
+    "dbRows": 2365,
+    "dbHuman": 3390,
+    "mikaGroup": "2025 Malaga",
+    "optionsCount": 20
+  },
+  {
+    "id": "paris-1-2025",
+    "name": "HYROX Paris 1 2025",
+    "season": "24/25",
+    "dbRows": 4454,
+    "dbHuman": 8592,
+    "mikaGroup": "2025 Paris 1",
+    "optionsCount": 18
+  },
+  {
+    "id": "paris-2025",
+    "name": "HYROX Paris 2025",
+    "season": "25/26",
+    "dbRows": 11551,
+    "dbHuman": 17987,
+    "mikaGroup": "2025 Paris",
+    "optionsCount": 27
+  },
+  {
+    "id": "barcelona-2025",
+    "name": "HYROX Barcelona 2025",
+    "season": "24/25",
+    "dbRows": 695,
+    "dbHuman": 889,
+    "mikaGroup": "2025 Barcelona",
+    "optionsCount": 16
+  },
+  {
+    "id": "las-vegas-2025",
+    "name": "HYROX Las Vegas 2025",
+    "season": "24/25",
+    "dbRows": 4785,
+    "dbHuman": 7380,
+    "mikaGroup": "2025 Las Vegas",
+    "optionsCount": 19
+  },
+  {
+    "id": "cardiff-2025",
+    "name": "HYROX Cardiff 2025",
+    "season": "24/25",
+    "dbRows": 6221,
+    "dbHuman": 9060,
+    "mikaGroup": "2025 Cardiff",
+    "optionsCount": 19
+  },
+  {
+    "id": "heerenveen-2025",
+    "name": "HYROX Heerenveen 2025",
+    "season": "24/25",
+    "dbRows": 586,
+    "dbHuman": 1056,
+    "mikaGroup": "2025 Heerenveen",
+    "optionsCount": 15
+  },
+  {
+    "id": "berlin-2025",
+    "name": "HYROX Berlin 2025",
+    "season": "24/25",
+    "dbRows": 6246,
+    "dbHuman": 7973,
+    "mikaGroup": "2025 Berlin",
+    "optionsCount": 19
+  },
+  {
+    "id": "new-york-2025",
+    "name": "HYROX New York 2025",
+    "season": "24/25",
+    "dbRows": 8050,
+    "dbHuman": 12765,
+    "mikaGroup": "2025 New York",
+    "optionsCount": 19
+  },
+  {
+    "id": "rimini-2025",
+    "name": "HYROX Rimini 2025",
+    "season": "24/25",
+    "dbRows": 6042,
+    "dbHuman": 9267,
+    "mikaGroup": "2025 Rimini",
+    "optionsCount": 19
+  },
+  {
+    "id": "riga-2025",
+    "name": "HYROX Riga 2025",
+    "season": "24/25",
+    "dbRows": 1727,
+    "dbHuman": 2656,
+    "mikaGroup": "2025 Riga",
+    "optionsCount": 6
+  },
+  {
+    "id": "world-championships-2025",
+    "name": "HYROX World Championships 2025",
+    "season": "24/25",
+    "dbRows": 77,
+    "dbHuman": 166,
+    "mikaGroup": "2025 World Championships",
+    "optionsCount": 17
+  },
+  {
+    "id": "sydney-2025",
+    "name": "HYROX Sydney 2025",
+    "season": "25/26",
+    "dbRows": 2007,
+    "dbHuman": 5133,
+    "mikaGroup": "2025 Sydney",
+    "optionsCount": 15
+  },
+  {
+    "id": "melbourne-2025",
+    "name": "HYROX Melbourne 2025",
+    "season": "25/26",
+    "dbRows": 13089,
+    "dbHuman": 21386,
+    "mikaGroup": "2025 Melbourne",
+    "optionsCount": 18
+  },
+  {
+    "id": "perth-2025",
+    "name": "HYROX Perth 2025",
+    "season": "25/26",
+    "dbRows": 4282,
+    "dbHuman": 6984,
+    "mikaGroup": "2025 Perth",
+    "optionsCount": 21
+  },
+  {
+    "id": "singapore-2025",
+    "name": "HYROX Singapore 2025",
+    "season": "25/26",
+    "dbRows": 3403,
+    "dbHuman": 5530,
+    "mikaGroup": "2025 Singapore",
+    "optionsCount": 6
+  },
+  {
+    "id": "mumbai-2025",
+    "name": "HYROX Mumbai 2025",
+    "season": "25/26",
+    "dbRows": 2993,
+    "dbHuman": 4457,
+    "mikaGroup": "2025 Mumbai",
+    "optionsCount": 6
+  },
+  {
+    "id": "incheon-2025",
+    "name": "HYROX Incheon 2025",
+    "season": "24/25",
+    "dbRows": 2128,
+    "dbHuman": 3899,
+    "mikaGroup": "2025 Incheon",
+    "optionsCount": 6
+  },
+  {
+    "id": "madrid-2025",
+    "name": "HYROX Madrid 2025",
+    "season": "25/26",
+    "dbRows": 10547,
+    "dbHuman": 16654,
+    "mikaGroup": "2025 Madrid",
+    "optionsCount": 22
+  },
+  {
+    "id": "birmingham-2025",
+    "name": "HYROX Birmingham 2025",
+    "season": "25/26",
+    "dbRows": 12264,
+    "dbHuman": 18231,
+    "mikaGroup": "2025 Birmingham",
+    "optionsCount": 28
+  },
+  {
+    "id": "gent-2025",
+    "name": "HYROX Gent 2025",
+    "season": "25/26",
+    "dbRows": 6395,
+    "dbHuman": 10160,
+    "mikaGroup": "2025 Gent",
+    "optionsCount": 13
+  },
+  {
+    "id": "chicago-2025",
+    "name": "HYROX Chicago 2025",
+    "season": "25/26",
+    "dbRows": 7580,
+    "dbHuman": 12406,
+    "mikaGroup": "2025 Chicago",
+    "optionsCount": 14
+  },
+  {
+    "id": "stockholm-2025",
+    "name": "HYROX Stockholm 2025",
+    "season": "25/26",
+    "dbRows": 7604,
+    "dbHuman": 12067,
+    "mikaGroup": "2025 Stockholm",
+    "optionsCount": 20
+  },
+  {
+    "id": "abu-dhabi-2025",
+    "name": "HYROX Abu Dhabi 2025",
+    "season": "25/26",
+    "dbRows": 1977,
+    "dbHuman": 3040,
+    "mikaGroup": "2025 Abu Dhabi",
+    "optionsCount": 6
+  },
+  {
+    "id": "beijing-2025",
+    "name": "HYROX Beijing 2025",
+    "season": "25/26",
+    "dbRows": 2400,
+    "dbHuman": 4283,
+    "mikaGroup": "2025 Beijing",
+    "optionsCount": 6
+  },
+  {
+    "id": "bordeaux-2025",
+    "name": "HYROX Bordeaux 2025",
+    "season": "25/26",
+    "dbRows": 10295,
+    "dbHuman": 16095,
+    "mikaGroup": "2025 Bordeaux",
+    "optionsCount": 21
+  },
+  {
+    "id": "delhi-2025",
+    "name": "HYROX Delhi 2025",
+    "season": "25/26",
+    "dbRows": 1606,
+    "dbHuman": 2326,
+    "mikaGroup": "2025 Delhi",
+    "optionsCount": 6
+  },
+  {
+    "id": "dublin-2025",
+    "name": "HYROX Dublin 2025",
+    "season": "25/26",
+    "dbRows": 9510,
+    "dbHuman": 15111,
+    "mikaGroup": "2025 Dublin",
+    "optionsCount": 27
+  },
+  {
+    "id": "gdansk-2025",
+    "name": "HYROX Gdansk 2025",
+    "season": "25/26",
+    "dbRows": 2311,
+    "dbHuman": 3535,
+    "mikaGroup": "2025 Gdansk",
+    "optionsCount": 6
+  },
+  {
+    "id": "geneva-2025",
+    "name": "HYROX Geneva 2025",
+    "season": "25/26",
+    "dbRows": 4884,
+    "dbHuman": 7774,
+    "mikaGroup": "2025 Geneva",
+    "optionsCount": 8
+  },
+  {
+    "id": "guadalajara-2025",
+    "name": "HYROX Guadalajara 2025",
+    "season": "24/25",
+    "dbRows": 1673,
+    "dbHuman": 2559,
+    "mikaGroup": "2025 Guadalajara",
+    "optionsCount": 6
+  },
+  {
+    "id": "hamburg-2025",
+    "name": "HYROX Hamburg 2025",
+    "season": "25/26",
+    "dbRows": 7370,
+    "dbHuman": 11564,
+    "mikaGroup": "2025 Hamburg",
+    "optionsCount": 23
+  },
+  {
+    "id": "johannesburg-i-2025",
+    "name": "HYROX Johannesburg I 2025",
+    "season": "24/25",
+    "dbRows": 2355,
+    "dbHuman": 3938,
+    "mikaGroup": "2025 Johannesburg I",
+    "optionsCount": 6
+  },
+  {
+    "id": "london-excel-2025",
+    "name": "HYROX London Excel 2025",
+    "season": "25/26",
+    "dbRows": 21740,
+    "dbHuman": 34307,
+    "mikaGroup": "2025 London Excel",
+    "optionsCount": 22
+  },
+  {
+    "id": "mexico-city-2025",
+    "name": "HYROX Mexico City 2025",
+    "season": "25/26",
+    "dbRows": 128,
+    "dbHuman": 512,
+    "mikaGroup": "2025 Mexico City",
+    "optionsCount": 19
+  },
+  {
+    "id": "oslo-2025",
+    "name": "HYROX Oslo 2025",
+    "season": "25/26",
+    "dbRows": 5064,
+    "dbHuman": 7721,
+    "mikaGroup": "2025 Oslo",
+    "optionsCount": 20
+  },
+  {
+    "id": "rio-de-janeiro-2025",
+    "name": "HYROX Rio de Janeiro 2025",
+    "season": "25/26",
+    "dbRows": 1780,
+    "dbHuman": 2737,
+    "mikaGroup": "2025 Rio de Janeiro",
+    "optionsCount": 6
+  },
+  {
+    "id": "rome-2025",
+    "name": "HYROX Rome 2025",
+    "season": "25/26",
+    "dbRows": 7051,
+    "dbHuman": 10835,
+    "mikaGroup": "2025 Rome",
+    "optionsCount": 20
+  },
+  {
+    "id": "sao-paulo-2025",
+    "name": "HYROX Sao Paulo 2025",
+    "season": "25/26",
+    "dbRows": 1184,
+    "dbHuman": 1811,
+    "mikaGroup": "2025 Sao Paulo",
+    "optionsCount": 6
+  },
+  {
+    "id": "sharjah-2025",
+    "name": "HYROX Sharjah 2025",
+    "season": "24/25",
+    "dbRows": 1958,
+    "dbHuman": 3067,
+    "mikaGroup": "2025 Sharjah",
+    "optionsCount": 6
+  },
+  {
+    "id": "stuttgart-2025",
+    "name": "HYROX Stuttgart 2025",
+    "season": "25/26",
+    "dbRows": 5772,
+    "dbHuman": 9270,
+    "mikaGroup": "2025 Stuttgart",
+    "optionsCount": 13
+  },
+  {
+    "id": "taipei-2025",
+    "name": "HYROX Taipei 2025",
+    "season": "24/25",
+    "dbRows": 2238,
+    "dbHuman": 3773,
+    "mikaGroup": "2025 Taipei",
+    "optionsCount": 6
+  },
+  {
+    "id": "toronto-2025",
+    "name": "HYROX Toronto 2025",
+    "season": "25/26",
+    "dbRows": 6869,
+    "dbHuman": 10768,
+    "mikaGroup": "2025 Toronto",
+    "optionsCount": 19
+  },
+  {
+    "id": "utrecht-2025",
+    "name": "HYROX Utrecht 2025",
+    "season": "25/26",
+    "dbRows": 7346,
+    "dbHuman": 11630,
+    "mikaGroup": "2025 Utrecht",
+    "optionsCount": 20
+  },
+  {
+    "id": "valencia-2025",
+    "name": "HYROX Valencia 2025",
+    "season": "25/26",
+    "dbRows": 5437,
+    "dbHuman": 8420,
+    "mikaGroup": "2025 Valencia",
+    "optionsCount": 20
+  },
+  {
+    "id": "verona-2025",
+    "name": "HYROX Verona 2025",
+    "season": "25/26",
+    "dbRows": 7155,
+    "dbHuman": 11559,
+    "mikaGroup": "2025 Verona",
+    "optionsCount": 14
+  },
+  {
+    "id": "warsaw-2025",
+    "name": "HYROX Warsaw 2025",
+    "season": "24/25",
+    "dbRows": 4257,
+    "dbHuman": 5948,
+    "mikaGroup": "2025 Warsaw",
+    "optionsCount": 17
+  },
+  {
+    "id": "yokohama-2025",
+    "name": "HYROX Yokohama 2025",
+    "season": "25/26",
+    "dbRows": 2253,
+    "dbHuman": 3424,
+    "mikaGroup": "2025 Yokohama",
+    "optionsCount": 6
+  }
+]
