@@ -1,0 +1,452 @@
+[
+  {
+    "name": "HYROX Vancouver 2025",
+    "dateStr": "December 20-21, 2025",
+    "athletes": 7891
+  },
+  {
+    "name": "HYROX Shenzhen 2025",
+    "dateStr": "December 20-21, 2025",
+    "athletes": 6448
+  },
+  {
+    "name": "HYROX Stockholm 2025",
+    "dateStr": "December 18-21, 2025",
+    "athletes": 12040
+  },
+  {
+    "name": "HYROX Poznań 2025",
+    "dateStr": "December 13-14, 2025",
+    "athletes": 6369
+  },
+  {
+    "name": "HYROX Gent 2025",
+    "dateStr": "December 12-14, 2025",
+    "athletes": 11038
+  },
+  {
+    "name": "HYROX Frankfurt 2025",
+    "dateStr": "December 12-14, 2025",
+    "athletes": 13167
+  },
+  {
+    "name": "HYROX Anaheim 2025",
+    "dateStr": "December 12-14, 2025",
+    "athletes": 12154
+  },
+  {
+    "name": "HYROX Melbourne Major 2025",
+    "dateStr": "December 11-14, 2025",
+    "athletes": 21467
+  },
+  {
+    "name": "HYROX Verona 2025",
+    "dateStr": "December 5-7, 2025",
+    "athletes": 11583
+  },
+  {
+    "name": "HYROX London ExCeL 2025",
+    "dateStr": "December 4-7, 2025",
+    "athletes": 33995
+  },
+  {
+    "name": "HYROX Johannesburg 2025",
+    "dateStr": "November 29-30, 2025",
+    "athletes": 5599
+  },
+  {
+    "name": "HYROX Singapore Expo 2025",
+    "dateStr": "November 29-30, 2025",
+    "athletes": 9739
+  },
+  {
+    "name": "HYROX Rio de Janeiro 2025",
+    "dateStr": "November 29, 2025",
+    "athletes": 2736
+  },
+  {
+    "name": "HYROX Utrecht 2025",
+    "dateStr": "November 28-30, 2025",
+    "athletes": 11650
+  },
+  {
+    "name": "HYROX Madrid 2025",
+    "dateStr": "November 27-30, 2025",
+    "athletes": 16629
+  },
+  {
+    "name": "HYROX Shanghai 2025",
+    "dateStr": "November 22-23, 2025",
+    "athletes": 6356
+  },
+  {
+    "name": "HYROX Dallas 2025",
+    "dateStr": "November 21-23, 2025",
+    "athletes": 15211
+  },
+  {
+    "name": "HYROX Bordeaux 2025",
+    "dateStr": "November 20-23, 2025",
+    "athletes": 16060
+  },
+  {
+    "name": "HYROX Chicago 2025",
+    "dateStr": "November 14-16, 2025",
+    "athletes": 12396
+  },
+  {
+    "name": "HYROX Dublin 2025",
+    "dateStr": "November 12-16, 2025",
+    "athletes": 15034
+  },
+  {
+    "name": "HYROX Seoul 2025",
+    "dateStr": "November 8-9, 2025",
+    "athletes": 5869
+  },
+  {
+    "name": "HYROX Mexico City 2025",
+    "dateStr": "November 7-9, 2025",
+    "athletes": 11756
+  },
+  {
+    "name": "HYROX Atlanta 2025",
+    "dateStr": "October 31, 2025 - November 2, 2025",
+    "athletes": 5450
+  },
+  {
+    "name": "HYROX Stuttgart 2025",
+    "dateStr": "October 31, 2025 - November 2, 2025",
+    "athletes": 9258
+  },
+  {
+    "name": "HYROX Birmingham 2025",
+    "dateStr": "October 22-26, 2025",
+    "athletes": 22355
+  },
+  {
+    "name": "HYROX Paris 2025",
+    "dateStr": "October 22-26, 2025",
+    "athletes": 17927
+  },
+  {
+    "name": "HYROX Valencia 2025",
+    "dateStr": "October 17-19, 2025",
+    "athletes": 8405
+  },
+  {
+    "name": "HYROX Gdańsk 2025",
+    "dateStr": "October 12, 2025",
+    "athletes": 3519
+  },
+  {
+    "name": "HYROX Geneva 2025",
+    "dateStr": "October 11-12, 2025",
+    "athletes": 7728
+  },
+  {
+    "name": "HYROX Toronto 2025",
+    "dateStr": "October 3-5, 2025",
+    "athletes": 10727
+  },
+  {
+    "name": "HYROX Hamburg 2025",
+    "dateStr": "October 2-5, 2025",
+    "athletes": 11550
+  },
+  {
+    "name": "HYROX Rome 2025",
+    "dateStr": "September 26-29, 2025",
+    "athletes": 10956
+  },
+  {
+    "name": "HYROX Boston 2025",
+    "dateStr": "September 26-29, 2025",
+    "athletes": 11587
+  },
+  {
+    "name": "HYROX Oslo 2025",
+    "dateStr": "September 26-29, 2025",
+    "athletes": 7999
+  },
+  {
+    "name": "HYROX Sao Paulo 2025",
+    "dateStr": "September 20, 2025",
+    "athletes": 1807
+  },
+  {
+    "name": "HYROX Maastricht 2025",
+    "dateStr": "September 19-21, 2025",
+    "athletes": 11120
+  },
+  {
+    "name": "HYROX Mumbai 2025",
+    "dateStr": "September 7, 2025",
+    "athletes": 2918
+  },
+  {
+    "name": "HYROX Acapulco 2025",
+    "dateStr": "September 6-7, 2025",
+    "athletes": 4866
+  },
+  {
+    "name": "HYROX Perth 2025",
+    "dateStr": "September 5-7, 2025",
+    "athletes": 6973
+  },
+  {
+    "name": "HYROX Beijing 2025",
+    "dateStr": "August 23, 2025",
+    "athletes": 4274
+  },
+  {
+    "name": "HYROX Yokohama 2025",
+    "dateStr": "August 9, 2025",
+    "athletes": 3425
+  },
+  {
+    "name": "HYROX Hong Kong 2025",
+    "dateStr": "July 26-27, 2025",
+    "athletes": 9432
+  },
+  {
+    "name": "HYROX Cape Town 2025",
+    "dateStr": "July 19-20, 2025",
+    "athletes": 5737
+  },
+  {
+    "name": "HYROX Delhi 2025",
+    "dateStr": "July 19, 2025",
+    "athletes": 2293
+  },
+  {
+    "name": "HYROX Abu Dhabi 2025",
+    "dateStr": "July 19, 2025",
+    "athletes": 3023
+  },
+  {
+    "name": "HYROX Sydney 2025",
+    "dateStr": "July 4-6, 2025",
+    "athletes": 17715
+  },
+  {
+    "name": "HYROX Singapore 2025 Open Asia",
+    "dateStr": "June 28-29, 2025",
+    "athletes": 12204
+  },
+  {
+    "name": "HYROX SEASON 24/25",
+    "dateStr": "June 12-15, 2025",
+    "athletes": 4021
+  },
+  {
+    "name": "HYROX Chicago 2025 M",
+    "dateStr": "June 12-15, 2025",
+    "athletes": 4021
+  },
+  {
+    "name": "HYROX Riga 2025",
+    "dateStr": "May 31, 2025",
+    "athletes": 2654
+  },
+  {
+    "name": "HYROX Rimini 2025",
+    "dateStr": "May 30, 2025 - June 1, 2025",
+    "athletes": 8185
+  },
+  {
+    "name": "HYROX Cardiff 2025",
+    "dateStr": "May 30, 2025 - June 1, 2025",
+    "athletes": 8692
+  },
+  {
+    "name": "HYROX New York 2025",
+    "dateStr": "May 30, 2025 - June 1, 2025",
+    "athletes": 12165
+  },
+  {
+    "name": "HYROX Bangkok 2025",
+    "dateStr": "May 24-25, 2025",
+    "athletes": 8321
+  },
+  {
+    "name": "HYROX Incheon 2025",
+    "dateStr": "May 17, 2025",
+    "athletes": 3844
+  },
+  {
+    "name": "HYROX Berlin 2025",
+    "dateStr": "May 16-18, 2025",
+    "athletes": 16571
+  },
+  {
+    "name": "HYROX Heerenveen 2025",
+    "dateStr": "May 9-11, 2025",
+    "athletes": 8213
+  },
+  {
+    "name": "HYROX Mumbai 2025",
+    "dateStr": "May 3, 2025",
+    "athletes": 1469
+  },
+  {
+    "name": "HYROX London 2025",
+    "dateStr": "May 3-5, 2025",
+    "athletes": 12089
+  },
+  {
+    "name": "HYROX Atlanta 2025",
+    "dateStr": "April 26-27, 2025",
+    "athletes": 5995
+  },
+  {
+    "name": "HYROX Barcelona 2025",
+    "dateStr": "April 25-27, 2025",
+    "athletes": 10329
+  },
+  {
+    "name": "HYROX Miami Beach 2025",
+    "dateStr": "April 19, 2025",
+    "athletes": 5515
+  },
+  {
+    "name": "HYROX Paris 2025",
+    "dateStr": "April 18-20, 2025",
+    "athletes": 11556
+  },
+  {
+    "name": "HYROX Warsaw 2025",
+    "dateStr": "April 12-13, 2025",
+    "athletes": 6451
+  },
+  {
+    "name": "HYROX Taipei 2025",
+    "dateStr": "April 12, 2025",
+    "athletes": 3740
+  },
+  {
+    "name": "HYROX Sharjah 2025",
+    "dateStr": "April 12, 2025",
+    "athletes": 3062
+  },
+  {
+    "name": "HYROX Cologne 2025",
+    "dateStr": "April 10-13, 2025",
+    "athletes": 10092
+  },
+  {
+    "name": "HYROX Shanghai 2025",
+    "dateStr": "April 5, 2025",
+    "athletes": 2918
+  },
+  {
+    "name": "HYROX Monterrey 2025",
+    "dateStr": "April 5, 2025",
+    "athletes": 3975
+  },
+  {
+    "name": "HYROX Belgium 2025",
+    "dateStr": "April 5-6, 2025",
+    "athletes": 8012
+  },
+  {
+    "name": "HYROX Washington D.C. Open North American",
+    "dateStr": "March 29-30, 2025",
+    "athletes": 8247
+  },
+  {
+    "name": "HYROX Málaga 2025",
+    "dateStr": "March 21-23, 2025",
+    "athletes": 9209
+  },
+  {
+    "name": "HYROX Houston 2025",
+    "dateStr": "March 15-16, 2025",
+    "athletes": 7709
+  },
+  {
+    "name": "HYROX Copenhagen 2025",
+    "dateStr": "March 14-15, 2025",
+    "athletes": 7252
+  },
+  {
+    "name": "HYROX Glasgow 2025",
+    "dateStr": "March 12-16, 2025",
+    "athletes": 16944
+  },
+  {
+    "name": "HYROX Valencia 2025",
+    "dateStr": "March 8-9, 2025",
+    "athletes": 4385
+  },
+  {
+    "name": "HYROX Brisbane 2025",
+    "dateStr": "March 1-2, 2025",
+    "athletes": 9526
+  },
+  {
+    "name": "HYROX Johannesburg 2025",
+    "dateStr": "March 1, 2025",
+    "athletes": 3935
+  },
+  {
+    "name": "HYROX Karlsruhe 2025",
+    "dateStr": "March 1-2, 2025",
+    "athletes": 6516
+  },
+  {
+    "name": "HYROX Rotterdam 2025",
+    "dateStr": "February 27, 2025 - March 2, 2025",
+    "athletes": 12523
+  },
+  {
+    "name": "HYROX Vienna 2025",
+    "dateStr": "February 22-23, 2025",
+    "athletes": 6291
+  },
+  {
+    "name": "HYROX Katowice 2025",
+    "dateStr": "February 22-23, 2025",
+    "athletes": 3187
+  },
+  {
+    "name": "HYROX Bilbao 2025",
+    "dateStr": "February 15-16, 2025",
+    "athletes": 3874
+  },
+  {
+    "name": "HYROX Toulouse 2025",
+    "dateStr": "February 8-9, 2025",
+    "athletes": 9046
+  },
+  {
+    "name": "HYROX Guadalajara 2025",
+    "dateStr": "February 8, 2025",
+    "athletes": 2554
+  },
+  {
+    "name": "HYROX St. Gallen 2025",
+    "dateStr": "February 8-9, 2025",
+    "athletes": 5138
+  },
+  {
+    "name": "HYROX Maastricht 2025",
+    "dateStr": "February 1-2, 2025",
+    "athletes": 7454
+  },
+  {
+    "name": "HYROX Auckland 2025",
+    "dateStr": "February 1-2, 2025",
+    "athletes": 5808
+  },
+  {
+    "name": "HYROX Las Vegas 2025",
+    "dateStr": "February 1-2, 2025",
+    "athletes": 7331
+  },
+  {
+    "name": "HYROX Manchester 2025",
+    "dateStr": "January 24-26, 2025",
+    "athletes": 8289
+  }
+]
