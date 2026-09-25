@@ -54,20 +54,7 @@ export const KNOWN_2025_TARGETS = [
     date: '2025-06-12',
     end_date: '2025-06-15',
     category: 'category_a',
-    eventCodes: [
-      { val: 'HE_LR3MS4JIB2D', div: 'HYROX ELITE 15', gender: 'M' },
-      { val: 'HDE_LR3MS4JIB30', div: 'HYROX ELITE 15 DOUBLES', gender: 'M' },
-      { val: 'HP1_LR3MS4JIB2F', div: 'HYROX PRO', gender: 'M' },
-      { val: 'HP2_LR3MS4JIB30', div: 'HYROX PRO', gender: 'M' },
-      { val: 'H1_LR3MS4JIB2F', div: 'HYROX', gender: 'M' },
-      { val: 'H2_LR3MS4JIB30', div: 'HYROX', gender: 'M' },
-      { val: 'HDP1_LR3MS4JIB30', div: 'HYROX PRO DOUBLES', gender: 'M' },
-      { val: 'HDP2_LR3MS4JIB31', div: 'HYROX PRO DOUBLES', gender: 'M' },
-      { val: 'HD1_LR3MS4JIB30', div: 'HYROX DOUBLES', gender: 'M' },
-      { val: 'HD2_LR3MS4JIB31', div: 'HYROX DOUBLES', gender: 'M' },
-      { val: 'HMR_LR3MS4JIB2F', div: 'HYROX TEAM RELAY', gender: 'X' },
-      { val: 'HA_LR3MS4JIB31', div: 'HYROX ADAPTIVE', gender: 'M' }
-    ]
+    optgroup: '2025 World Championships'
   },
   {
     id: 'singapore-2025',
@@ -199,7 +186,7 @@ export const KNOWN_2025_TARGETS = [
     date: '2025-03-08',
     end_date: '2025-03-09',
     category: 'missing_33',
-    base: 'VALENCIA25_OVERALL'
+    optgroup: '2025 Valencia'
   },
   {
     id: 'copenhagen-2025',
@@ -463,12 +450,23 @@ async function getOptionsForOptgroup(season, optgroupLabel) {
   const url = `https://hyrox.r.mikatiming.com/${season}/?pid=list`;
   const res = await fetch(url, { headers: { 'User-Agent': UA } });
   const html = await res.text();
-  const ogRegex = new RegExp(`<optgroup[^>]*label="[^"]*${optgroupLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*"[^>]*>([\\s\\S]*?)<\\/optgroup>`, 'i');
-  const match = html.match(ogRegex);
-  if (!match) return [];
 
-  return [...match[1].matchAll(/<option[^>]*value="([^"]*)"[^>]*>([\\s\\S]*?)<\/option>/gi)]
-    .map(m => ({ val: m[1], name: m[2].trim() }));
+  const groups = html.split(/<optgroup\s+/i);
+  const targetLabel = optgroupLabel.toLowerCase().trim();
+
+  for (let i = 1; i < groups.length; i++) {
+    const chunk = groups[i];
+    const labelMatch = chunk.match(/label="([^"]*)"/i);
+    if (!labelMatch) continue;
+    const label = labelMatch[1].toLowerCase().trim();
+    if (label.includes(targetLabel) || targetLabel.includes(label)) {
+      const endIdx = chunk.indexOf('</optgroup>');
+      const innerHtml = endIdx !== -1 ? chunk.slice(0, endIdx) : chunk;
+      return [...innerHtml.matchAll(/<option[^>]*value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/gi)]
+        .map(m => ({ val: m[1], name: m[2].trim() }));
+    }
+  }
+  return [];
 }
 
 // Helper: Fetch event options for a given base from MikaTiming sonstige
@@ -762,6 +760,9 @@ async function main() {
       process.exit(1);
     }
     targets = [match];
+  } else if (targetArg === 'final_8' || targetArg === 'pending_8') {
+    const finalIds = ['mumbai-spring-2025', 'rotterdam-spring-2025', 'paris-spring-2025', 'atlanta-spring-2025', 'boston-2025', 'singapore-asia-open-2025', 'valencia-spring-2025', 'world-championships-2025'];
+    targets = KNOWN_2025_TARGETS.filter(r => finalIds.includes(r.id));
   } else if (targetArg === 'missing_33' || targetArg === 'missing_races') {
     targets = KNOWN_2025_TARGETS.filter(r => r.category === 'missing_33');
   } else if (targetArg === 'category_a' || targetArg === 'incomplete_races') {

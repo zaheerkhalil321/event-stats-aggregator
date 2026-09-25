@@ -10,6 +10,7 @@ on:
         default: 'missing_33'
         type: choice
         options:
+          - 'final_8'          # Ingest remaining 8 pending/incomplete 2025 races
           - 'missing_33'       # Ingest the 33 races skipped from sonstige
           - 'category_a'       # Ingest incomplete multi-wave events (World Champs Chicago, Singapore Expo)
           - 'specific_race'    # Ingest a specific race (fill race_id below)
