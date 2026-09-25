@@ -7,7 +7,7 @@ on:
       target:
         description: 'Target dataset to backfill'
         required: true
-        default: 'missing_33'
+        default: 'final_8'
         type: choice
         options:
           - 'final_8'          # Ingest remaining 8 pending/incomplete 2025 races
