@@ -1,0 +1,394 @@
+[
+  {
+    "id": "las-vegas-2025",
+    "name": "HYROX Las Vegas 2025",
+    "date": "2025-02-01",
+    "end_date": "2025-02-02",
+    "athletes_count": 7380
+  },
+  {
+    "id": "guadalajara-2025",
+    "name": "HYROX Guadalajara 2025",
+    "date": "2025-02-08",
+    "end_date": "2025-02-08",
+    "athletes_count": 2559
+  },
+  {
+    "id": "bilbao-2025",
+    "name": "HYROX Bilbao 2025",
+    "date": "2025-02-15",
+    "end_date": "2025-02-16",
+    "athletes_count": 3870
+  },
+  {
+    "id": "glasgow-2025",
+    "name": "HYROX Glasgow 2025",
+    "date": "2025-03-12",
+    "end_date": "2025-03-16",
+    "athletes_count": 17658
+  },
+  {
+    "id": "malaga-2025",
+    "name": "HYROX Malaga 2025",
+    "date": "2025-03-21",
+    "end_date": "2025-03-23",
+    "athletes_count": 3642
+  },
+  {
+    "id": "monterrey-2025",
+    "name": "HYROX Monterrey 2025",
+    "date": "2025-04-05",
+    "end_date": "2025-04-05",
+    "athletes_count": 3984
+  },
+  {
+    "id": "shanghai-2025",
+    "name": "HYROX Shanghai 2025",
+    "date": "2025-04-05",
+    "end_date": "2025-04-05",
+    "athletes_count": 2957
+  },
+  {
+    "id": "cologne-2025",
+    "name": "HYROX Cologne 2025",
+    "date": "2025-04-10",
+    "end_date": "2025-04-13",
+    "athletes_count": 10105
+  },
+  {
+    "id": "sharjah-2025",
+    "name": "HYROX Sharjah 2025",
+    "date": "2025-04-12",
+    "end_date": "2025-04-12",
+    "athletes_count": 3067
+  },
+  {
+    "id": "taipei-2025",
+    "name": "HYROX Taipei 2025",
+    "date": "2025-04-12",
+    "end_date": "2025-04-12",
+    "athletes_count": 3773
+  },
+  {
+    "id": "warsaw-2025",
+    "name": "HYROX Warsaw 2025",
+    "date": "2025-04-12",
+    "end_date": "2025-04-13",
+    "athletes_count": 6464
+  },
+  {
+    "id": "paris-2025",
+    "name": "HYROX Paris 2025",
+    "date": "2025-04-18",
+    "end_date": "2025-04-20",
+    "athletes_count": 17987
+  },
+  {
+    "id": "miami-beach-2025",
+    "name": "HYROX Miami Beach 2025",
+    "date": "2025-04-19",
+    "end_date": "2025-04-19",
+    "athletes_count": 5532
+  },
+  {
+    "id": "barcelona-2025",
+    "name": "HYROX Barcelona 2025",
+    "date": "2025-04-25",
+    "end_date": "2025-04-27",
+    "athletes_count": 10726
+  },
+  {
+    "id": "heerenveen-2025",
+    "name": "HYROX Heerenveen 2025",
+    "date": "2025-05-09",
+    "end_date": "2025-05-11",
+    "athletes_count": 8228
+  },
+  {
+    "id": "berlin-2025",
+    "name": "HYROX Berlin 2025",
+    "date": "2025-05-16",
+    "end_date": "2025-05-18",
+    "athletes_count": 17855
+  },
+  {
+    "id": "incheon-2025",
+    "name": "HYROX Incheon 2025",
+    "date": "2025-05-17",
+    "end_date": "2025-05-17",
+    "athletes_count": 3899
+  },
+  {
+    "id": "bangkok-2025",
+    "name": "HYROX Bangkok 2025",
+    "date": "2025-05-24",
+    "end_date": "2025-05-25",
+    "athletes_count": 11272
+  },
+  {
+    "id": "cardiff-2025",
+    "name": "HYROX Cardiff 2025",
+    "date": "2025-05-30",
+    "end_date": "2025-06-01",
+    "athletes_count": 9060
+  },
+  {
+    "id": "new-york-2025",
+    "name": "HYROX New York 2025",
+    "date": "2025-05-30",
+    "end_date": "2025-06-01",
+    "athletes_count": 12765
+  },
+  {
+    "id": "rimini-2025",
+    "name": "HYROX Rimini 2025",
+    "date": "2025-05-30",
+    "end_date": "2025-06-01",
+    "athletes_count": 9267
+  },
+  {
+    "id": "riga-2025",
+    "name": "HYROX Riga 2025",
+    "date": "2025-05-31",
+    "end_date": "2025-05-31",
+    "athletes_count": 2656
+  },
+  {
+    "id": "world-championships-2025",
+    "name": "HYROX World Championships 2025",
+    "date": "2025-06-12",
+    "end_date": "2025-06-15",
+    "athletes_count": 166
+  },
+  {
+    "id": "sydney-2025",
+    "name": "HYROX Sydney 2025",
+    "date": "2025-07-04",
+    "end_date": "2025-07-06",
+    "athletes_count": 17981
+  },
+  {
+    "id": "abu-dhabi-2025",
+    "name": "HYROX Abu Dhabi 2025",
+    "date": "2025-07-19",
+    "end_date": "2025-07-19",
+    "athletes_count": 3040
+  },
+  {
+    "id": "delhi-2025",
+    "name": "HYROX Delhi 2025",
+    "date": "2025-07-19",
+    "end_date": "2025-07-19",
+    "athletes_count": 2326
+  },
+  {
+    "id": "yokohama-2025",
+    "name": "HYROX Yokohama 2025",
+    "date": "2025-08-09",
+    "end_date": "2025-08-09",
+    "athletes_count": 3424
+  },
+  {
+    "id": "beijing-2025",
+    "name": "HYROX Beijing 2025",
+    "date": "2025-08-23",
+    "end_date": "2025-08-23",
+    "athletes_count": 4283
+  },
+  {
+    "id": "perth-2025",
+    "name": "HYROX Perth 2025",
+    "date": "2025-09-05",
+    "end_date": "2025-09-07",
+    "athletes_count": 6984
+  },
+  {
+    "id": "mumbai-2025",
+    "name": "HYROX Mumbai 2025",
+    "date": "2025-09-07",
+    "end_date": "2025-09-07",
+    "athletes_count": 4457
+  },
+  {
+    "id": "maastricht-2025",
+    "name": "HYROX Maastricht 2025",
+    "date": "2025-09-19",
+    "end_date": "2025-09-21",
+    "athletes_count": 11138
+  },
+  {
+    "id": "sao-paulo-2025",
+    "name": "HYROX Sao Paulo 2025",
+    "date": "2025-09-19",
+    "end_date": "2025-09-21",
+    "athletes_count": 1811
+  },
+  {
+    "id": "oslo-2025",
+    "name": "HYROX Oslo 2025",
+    "date": "2025-09-26",
+    "end_date": "2025-09-28",
+    "athletes_count": 8011
+  },
+  {
+    "id": "rome-2025",
+    "name": "HYROX Rome 2025",
+    "date": "2025-09-26",
+    "end_date": "2025-09-28",
+    "athletes_count": 10835
+  },
+  {
+    "id": "hamburg-2025",
+    "name": "HYROX Hamburg 2025",
+    "date": "2025-10-02",
+    "end_date": "2025-10-05",
+    "athletes_count": 11564
+  },
+  {
+    "id": "toronto-2025",
+    "name": "HYROX Toronto 2025",
+    "date": "2025-10-03",
+    "end_date": "2025-10-05",
+    "athletes_count": 10768
+  },
+  {
+    "id": "geneva-2025",
+    "name": "HYROX Geneva 2025",
+    "date": "2025-10-11",
+    "end_date": "2025-10-12",
+    "athletes_count": 7774
+  },
+  {
+    "id": "gdansk-2025",
+    "name": "HYROX Gdansk 2025",
+    "date": "2025-10-11",
+    "end_date": "2025-10-12",
+    "athletes_count": 3535
+  },
+  {
+    "id": "valencia-2025",
+    "name": "HYROX Valencia 2025",
+    "date": "2025-10-17",
+    "end_date": "2025-10-19",
+    "athletes_count": 8420
+  },
+  {
+    "id": "birmingham-2025",
+    "name": "HYROX Birmingham 2025",
+    "date": "2025-10-22",
+    "end_date": "2025-10-26",
+    "athletes_count": 22557
+  },
+  {
+    "id": "atlanta-2025",
+    "name": "HYROX Atlanta 2025",
+    "date": "2025-10-31",
+    "end_date": "2025-11-02",
+    "athletes_count": 5460
+  },
+  {
+    "id": "stuttgart-2025",
+    "name": "HYROX Stuttgart 2025",
+    "date": "2025-10-31",
+    "end_date": "2025-11-02",
+    "athletes_count": 9270
+  },
+  {
+    "id": "mexico-city-2025",
+    "name": "HYROX Mexico City 2025",
+    "date": "2025-11-07",
+    "end_date": "2025-11-09",
+    "athletes_count": 11768
+  },
+  {
+    "id": "dublin-2025",
+    "name": "HYROX Dublin 2025",
+    "date": "2025-11-12",
+    "end_date": "2025-11-16",
+    "athletes_count": 15111
+  },
+  {
+    "id": "chicago-2025",
+    "name": "HYROX Chicago 2025",
+    "date": "2025-11-14",
+    "end_date": "2025-11-16",
+    "athletes_count": 12406
+  },
+  {
+    "id": "bordeaux-2025",
+    "name": "HYROX Bordeaux 2025",
+    "date": "2025-11-20",
+    "end_date": "2025-11-23",
+    "athletes_count": 16095
+  },
+  {
+    "id": "madrid-2025",
+    "name": "HYROX Madrid 2025",
+    "date": "2025-11-27",
+    "end_date": "2025-11-30",
+    "athletes_count": 16654
+  },
+  {
+    "id": "utrecht-2025",
+    "name": "HYROX Utrecht 2025",
+    "date": "2025-11-28",
+    "end_date": "2025-11-30",
+    "athletes_count": 11630
+  },
+  {
+    "id": "singapore-2025",
+    "name": "HYROX Singapore 2025",
+    "date": "2025-11-29",
+    "end_date": "2025-11-30",
+    "athletes_count": 8684
+  },
+  {
+    "id": "johannesburg-i-2025",
+    "name": "HYROX Johannesburg I 2025",
+    "date": "2025-11-29",
+    "end_date": "2025-11-30",
+    "athletes_count": 3938
+  },
+  {
+    "id": "rio-de-janeiro-2025",
+    "name": "HYROX Rio de Janeiro 2025",
+    "date": "2025-11-29",
+    "end_date": "2025-11-29",
+    "athletes_count": 2737
+  },
+  {
+    "id": "london-excel-2025",
+    "name": "HYROX London Excel 2025",
+    "date": "2025-12-04",
+    "end_date": "2025-12-07",
+    "athletes_count": 34307
+  },
+  {
+    "id": "verona-2025",
+    "name": "HYROX Verona 2025",
+    "date": "2025-12-05",
+    "end_date": "2025-12-07",
+    "athletes_count": 11559
+  },
+  {
+    "id": "melbourne-2025",
+    "name": "HYROX Melbourne 2025",
+    "date": "2025-12-11",
+    "end_date": "2025-12-14",
+    "athletes_count": 21467
+  },
+  {
+    "id": "gent-2025",
+    "name": "HYROX Gent 2025",
+    "date": "2025-12-12",
+    "end_date": "2025-12-14",
+    "athletes_count": 11038
+  },
+  {
+    "id": "stockholm-2025",
+    "name": "HYROX Stockholm 2025",
+    "date": "2025-12-18",
+    "end_date": "2025-12-21",
+    "athletes_count": 12067
+  }
+]
