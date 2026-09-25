@@ -2,8 +2,9 @@ name: ⚡ Live Weekend Sync
 
 on:
   schedule:
-    # Run every 4 hours (06:15, 10:15, 14:15, 18:15, 22:15 UTC) every day (Race Days + Tuesday + Wrap-Up)
-    - cron: '15 6,10,14,18,22 * * *'
+    # Run every 2 hours (00:15, 02:15, 04:15, ..., 22:15 UTC)
+    # Smart gatekeeper automatically exits in 0.1s on non-race days!
+    - cron: '15 */2 * * *'
 
   # Allow manual trigger with optional race target, splits depth, or dry-run
   workflow_dispatch:
