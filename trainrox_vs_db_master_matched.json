@@ -202,12 +202,12 @@
     "dbId": "valencia-spring-2025",
     "dbName": "HYROX Valencia Spring 2025",
     "dbDate": "2025-03-08",
-    "dbCount": 4755,
-    "dbRows": 3120,
-    "displayDb": 4755,
-    "diff": "+370",
-    "diffPct": "8.4%",
-    "status": "⚠️ Diff >5%"
+    "dbCount": 4412,
+    "dbRows": 2870,
+    "displayDb": 4412,
+    "diff": "+27",
+    "diffPct": "0.6%",
+    "status": "✅ Exact (<=1%)"
   },
   {
     "sr": 15,
@@ -262,11 +262,11 @@
     "dbId": "malaga-2025",
     "dbName": "HYROX Malaga 2025",
     "dbDate": "2025-03-21",
-    "dbCount": 9209,
+    "dbCount": 9236,
     "dbRows": 5964,
-    "displayDb": 9209,
-    "diff": "+0",
-    "diffPct": "0.0%",
+    "displayDb": 9236,
+    "diff": "+27",
+    "diffPct": "0.3%",
     "status": "✅ Exact (<=1%)"
   },
   {
@@ -397,11 +397,11 @@
     "dbId": "paris-spring-2025",
     "dbName": "HYROX Paris Spring 2025",
     "dbDate": "2025-04-18",
-    "dbCount": 20323,
-    "dbRows": 11949,
-    "displayDb": 11949,
-    "diff": "+393",
-    "diffPct": "3.4%",
+    "dbCount": 11727,
+    "dbRows": 7493,
+    "displayDb": 11727,
+    "diff": "+171",
+    "diffPct": "1.5%",
     "status": "👍 Close (<=5%)"
   },
   {
@@ -502,11 +502,11 @@
     "dbId": "berlin-2025",
     "dbName": "HYROX Berlin 2025",
     "dbDate": "2025-05-16",
-    "dbCount": 16571,
-    "dbRows": 11187,
-    "displayDb": 16571,
-    "diff": "+0",
-    "diffPct": "0.0%",
+    "dbCount": 16591,
+    "dbRows": 10555,
+    "displayDb": 16591,
+    "diff": "+20",
+    "diffPct": "0.1%",
     "status": "✅ Exact (<=1%)"
   },
   {
@@ -532,12 +532,12 @@
     "dbId": "bangkok-2025",
     "dbName": "HYROX Bangkok 2025",
     "dbDate": "2025-05-24",
-    "dbCount": 8321,
+    "dbCount": 11272,
     "dbRows": 7873,
-    "displayDb": 8321,
-    "diff": "+0",
-    "diffPct": "0.0%",
-    "status": "✅ Exact (<=1%)"
+    "displayDb": 11272,
+    "diff": "+2951",
+    "diffPct": "35.5%",
+    "status": "⚠️ Diff >5%"
   },
   {
     "sr": 37,
@@ -547,12 +547,12 @@
     "dbId": "rimini-2025",
     "dbName": "HYROX Rimini 2025",
     "dbDate": "2025-05-30",
-    "dbCount": 8185,
+    "dbCount": 9267,
     "dbRows": 6042,
-    "displayDb": 8185,
-    "diff": "+0",
-    "diffPct": "0.0%",
-    "status": "✅ Exact (<=1%)"
+    "displayDb": 9267,
+    "diff": "+1082",
+    "diffPct": "13.2%",
+    "status": "⚠️ Diff >5%"
   },
   {
     "sr": 38,
@@ -772,12 +772,12 @@
     "dbId": "mumbai-2025",
     "dbName": "HYROX Mumbai 2025",
     "dbDate": "2025-09-07",
-    "dbCount": 2918,
+    "dbCount": 4457,
     "dbRows": 2993,
-    "displayDb": 2918,
-    "diff": "+0",
-    "diffPct": "0.0%",
-    "status": "✅ Exact (<=1%)"
+    "displayDb": 4457,
+    "diff": "+1539",
+    "diffPct": "52.7%",
+    "status": "⚠️ Diff >5%"
   },
   {
     "sr": 53,
@@ -1147,12 +1147,12 @@
     "dbId": "singapore-2025",
     "dbName": "HYROX Singapore 2025",
     "dbDate": "2025-11-29",
-    "dbCount": 9739,
+    "dbCount": 8684,
     "dbRows": 4980,
-    "displayDb": 9739,
-    "diff": "+0",
-    "diffPct": "0.0%",
-    "status": "✅ Exact (<=1%)"
+    "displayDb": 8684,
+    "diff": "-1055",
+    "diffPct": "10.8%",
+    "status": "⚠️ Diff >5%"
   },
   {
     "sr": 78,
@@ -1222,11 +1222,11 @@
     "dbId": "melbourne-2025",
     "dbName": "HYROX Melbourne 2025",
     "dbDate": "2025-12-11",
-    "dbCount": 21467,
+    "dbCount": 21386,
     "dbRows": 13089,
-    "displayDb": 21467,
-    "diff": "+0",
-    "diffPct": "0.0%",
+    "displayDb": 21386,
+    "diff": "-81",
+    "diffPct": "0.4%",
     "status": "✅ Exact (<=1%)"
   },
   {
@@ -1237,10 +1237,10 @@
     "dbId": "gent-2025",
     "dbName": "HYROX Gent 2025",
     "dbDate": "2025-12-12",
-    "dbCount": 11038,
+    "dbCount": 11034,
     "dbRows": 6832,
-    "displayDb": 11038,
-    "diff": "+0",
+    "displayDb": 11034,
+    "diff": "-4",
     "diffPct": "0.0%",
     "status": "✅ Exact (<=1%)"
   },
