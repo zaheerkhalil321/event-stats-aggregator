@@ -422,7 +422,7 @@ const KNOWN_DATES = {
   'salt-lake-city-youngstars-2026': { date: '2026-09-19', end_date: '2026-09-20' },
   'rome-2026': { date: '2026-09-23', end_date: '2026-09-27' },
   'oslo-2026': { date: '2026-09-25', end_date: '2026-09-27' },
-  'bangkok-2026': { date: '2026-09-26', end_date: '2026-09-28' },
+  'bangkok-2026': { date: '2026-08-13', end_date: '2026-08-16' },
 
   // October 2026
   'bordeaux-2026': { date: '2026-09-30', end_date: '2026-10-04' },
