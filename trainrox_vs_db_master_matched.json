@@ -532,12 +532,12 @@
     "dbId": "bangkok-2025",
     "dbName": "HYROX Bangkok 2025",
     "dbDate": "2025-05-24",
-    "dbCount": 11272,
-    "dbRows": 7873,
-    "displayDb": 11272,
-    "diff": "+2951",
-    "diffPct": "35.5%",
-    "status": "⚠️ Diff >5%"
+    "dbCount": 8343,
+    "dbRows": 4944,
+    "displayDb": 8343,
+    "diff": "+22",
+    "diffPct": "0.3%",
+    "status": "✅ Exact (<=1%)"
   },
   {
     "sr": 37,
@@ -772,11 +772,11 @@
     "dbId": "mumbai-2025",
     "dbName": "HYROX Mumbai 2025",
     "dbDate": "2025-09-07",
-    "dbCount": 4457,
-    "dbRows": 2993,
-    "displayDb": 4457,
-    "diff": "+1539",
-    "diffPct": "52.7%",
+    "dbCount": 3121,
+    "dbRows": 2098,
+    "displayDb": 3121,
+    "diff": "+203",
+    "diffPct": "7.0%",
     "status": "⚠️ Diff >5%"
   },
   {
@@ -1147,11 +1147,11 @@
     "dbId": "singapore-2025",
     "dbName": "HYROX Singapore 2025",
     "dbDate": "2025-11-29",
-    "dbCount": 8684,
-    "dbRows": 4980,
-    "displayDb": 8684,
-    "diff": "-1055",
-    "diffPct": "10.8%",
+    "dbCount": 3189,
+    "dbRows": 1609,
+    "displayDb": 3189,
+    "diff": "-6550",
+    "diffPct": "67.3%",
     "status": "⚠️ Diff >5%"
   },
   {
