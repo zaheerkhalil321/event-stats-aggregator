@@ -384,8 +384,8 @@ async function runSeason(seasonSlug, filterRaceId = null) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const seasonArg = args.find(a => a.startsWith('--season='))?.split('=')[1] || args[args.indexOf('--season') + 1] || 'season-6';
-  const raceArg = args.find(a => a.startsWith('--race='))?.split('=')[1] || args[args.indexOf('--race') + 1] || null;
+  const seasonArg = args.find(a => a.startsWith('--season='))?.split('=')[1] || (args.includes('--season') ? args[args.indexOf('--season') + 1] : null) || 'season-6';
+  const raceArg = args.find(a => a.startsWith('--race='))?.split('=')[1] || (args.includes('--race') ? args[args.indexOf('--race') + 1] : null) || null;
 
   if (seasonArg === 'all') {
     await runSeason('season-6', raceArg);
