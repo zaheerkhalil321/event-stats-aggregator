@@ -1,0 +1,50 @@
+name: ⚡ Historical Seasons Backfill (2022-2024)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to backfill from MikaTiming'
+        required: true
+        default: 'season-6'
+        type: choice
+        options:
+          - 'season-6'  # 2023/2024 Season (44 events)
+          - 'season-5'  # 2022/2023 Season (36 events)
+          - 'season-4'  # 2021/2022 Season (26 events)
+          - 'all'       # All Historical Seasons (2021-2024)
+      race_id:
+        description: 'Optional specific race slug to filter (e.g. gdansk-2024)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  backfill:
+    name: Backfill ${{ github.event.inputs.season }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hours max cloud execution time
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        run: npm install
+
+      - name: 🚀 Run Historical Season Ingestor
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          ARGS="--season ${{ github.event.inputs.season }}"
+          if [ -n "${{ github.event.inputs.race_id }}" ]; then
+            ARGS="$ARGS --race ${{ github.event.inputs.race_id }}"
+          fi
+          echo "Executing: node scripts/scrape_historical_season.mjs $ARGS"
+          node scripts/scrape_historical_season.mjs $ARGS

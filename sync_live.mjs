@@ -156,7 +156,7 @@ function secondsToTime(seconds) {
 async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex) {
   const athletes = [];
   const sexParam = sex ? `&search[sex]=${sex}` : '';
-  let baseLabel = waveText.replace(/\s*-\s*(Thursday|Friday|Saturday|Sunday|Monday)/i, '').trim();
+  let baseLabel = waveText.replace(/\s*-\s*(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i, '').trim();
   let divisionLabel = baseLabel;
   if (sex === 'M') divisionLabel = `${baseLabel} MEN`;
   else if (sex === 'W') divisionLabel = `${baseLabel} WOMEN`;
@@ -588,6 +588,21 @@ async function updateLiveRaceCount(raceId, raceStartDate, raceEndDate) {
             AND a_open.division IN ('HYROX MEN', 'HYROX WOMEN')
             AND a_pro.division IN ('HYROX PRO MEN', 'HYROX PRO WOMEN')
             AND a_open.id != a_pro.id
+        );
+    `);
+
+    // 🛡️ Weekday Normalization Shield: Purge any raw weekday-tagged legacy duplicate divisions
+    await runQuery(`
+      DELETE FROM hyrox_athlete_results
+      WHERE race_id = ${esc(raceId)}
+        AND (
+          division LIKE '% - MONDAY %' OR division LIKE '% - MONDAY'
+          OR division LIKE '% - TUESDAY %' OR division LIKE '% - TUESDAY'
+          OR division LIKE '% - WEDNESDAY %' OR division LIKE '% - WEDNESDAY'
+          OR division LIKE '% - THURSDAY %' OR division LIKE '% - THURSDAY'
+          OR division LIKE '% - FRIDAY %' OR division LIKE '% - FRIDAY'
+          OR division LIKE '% - SATURDAY %' OR division LIKE '% - SATURDAY'
+          OR division LIKE '% - SUNDAY %' OR division LIKE '% - SUNDAY'
         );
     `);
 
