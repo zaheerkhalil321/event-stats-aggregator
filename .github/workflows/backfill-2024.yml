@@ -1,0 +1,41 @@
+name: ⚡ 2024 Races Historical Backfill & Parity
+
+on:
+  workflow_dispatch:
+    inputs:
+      race_id:
+        description: 'Specific race slug (optional, e.g. london-spring-2024, glasgow-2024, melbourne-2024). Leave empty to run all 26 races.'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  backfill-2024:
+    name: Backfill 2024 Races
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hours max cloud execution time
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        run: npm install
+
+      - name: 🚀 Run 2024 Backfill Ingestor
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.race_id }}" ]; then
+            echo "Executing single race: ${{ github.event.inputs.race_id }}"
+            node scripts/scrape_2024_missing_races.mjs "${{ github.event.inputs.race_id }}"
+          else
+            echo "Executing full 2024 backfill (all 26 races)"
+            node scripts/scrape_2024_missing_races.mjs
+          fi
