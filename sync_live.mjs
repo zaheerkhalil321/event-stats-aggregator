@@ -331,12 +331,27 @@ async function scrapeSplits(page, athlete) {
 async function upsertLiveAthletes(athletes) {
   if (athletes.length === 0 || IS_TEST) return;
 
-  // Deduplicate within batch to prevent Postgres 21000 ON CONFLICT collision
+  // Deduplicate within batch to prevent collisions on both (race, name, div) and (race, mika_idp)
   const uniqueMap = new Map();
+  const idpSeen = new Map();
   for (const a of athletes) {
     const key = `${a.race_id}:::${a.full_name.trim().toLowerCase()}:::${a.division}`;
-    if (!uniqueMap.has(key) || a.total_time) {
+    const idpKey = a.mika_idp ? `${a.race_id}:::${a.mika_idp}` : null;
+
+    if (idpKey && idpSeen.has(idpKey)) {
+      const prevKey = idpSeen.get(idpKey);
+      const prev = uniqueMap.get(prevKey);
+      if (a.total_time && !prev?.total_time) {
+        uniqueMap.delete(prevKey);
+        uniqueMap.set(key, a);
+        idpSeen.set(idpKey, key);
+      }
+      continue;
+    }
+
+    if (!uniqueMap.has(key) || (a.total_time && !uniqueMap.get(key)?.total_time)) {
       uniqueMap.set(key, a);
+      if (idpKey) idpSeen.set(idpKey, key);
     }
   }
   const cleanAthletes = Array.from(uniqueMap.values());
@@ -344,6 +359,37 @@ async function upsertLiveAthletes(athletes) {
   const CHUNK = 50;
   for (let i = 0; i < cleanAthletes.length; i += CHUNK) {
     const batch = cleanAthletes.slice(i, i + CHUNK);
+
+    // 🛡️ Pre-align existing rows in DB where mika_idp matches but full_name or division was changed by MikaTiming
+    const idpAthletes = batch.filter(a => a.mika_idp);
+    if (idpAthletes.length > 0) {
+      const idpValues = idpAthletes.map(a => esc(a.mika_idp)).join(',');
+      const raceIdEsc = esc(batch[0].race_id);
+      try {
+        const existingRows = await runQuery(`
+          SELECT id, mika_idp, full_name, division 
+          FROM hyrox_athlete_results 
+          WHERE race_id = ${raceIdEsc} AND mika_idp IN (${idpValues})
+        `);
+
+        if (existingRows && existingRows.length > 0) {
+          const idpToScraped = new Map(idpAthletes.map(a => [a.mika_idp, a]));
+          for (const row of existingRows) {
+            const scraped = idpToScraped.get(row.mika_idp);
+            if (scraped && (scraped.full_name !== row.full_name || scraped.division !== row.division)) {
+              await runQuery(`
+                UPDATE hyrox_athlete_results 
+                SET full_name = ${esc(scraped.full_name)}, division = ${esc(scraped.division)} 
+                WHERE id = ${row.id}
+              `);
+            }
+          }
+        }
+      } catch (err) {
+        // Non-blocking alignment probe
+      }
+    }
+
     const rows = batch.map(a => `(
       ${esc(a.race_id)}, ${esc(a.full_name)}, ${esc(a.bib_number)},
       ${esc(a.nationality)}, ${esc(a.gender)}, ${esc(a.age_group)}, ${esc(a.division)},
