@@ -209,6 +209,8 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
           const href = link.getAttribute('href') || '';
           const cleanHref = href.startsWith('/') ? href.slice(1) : href;
           const detailUrl = href.startsWith('http') ? href : `https://hyrox.r.mikatiming.com/${sSlug}/${cleanHref}`;
+          const idpMatch = href.match(/idp=([A-Za-z0-9_]+)/);
+          const mikaIdp = idpMatch ? idpMatch[1] : null;
 
           list.push({
             race_id: rId,
@@ -221,6 +223,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
             nationality: nation || 'XX',
             division: divLabel,
             gender: genderCode,
+            mika_idp: mikaIdp,
           });
         }
         return list;
@@ -349,7 +352,7 @@ async function upsertLiveAthletes(athletes) {
       ${esc(a.run_5)}, ${esc(a.run_6)}, ${esc(a.run_7)}, ${esc(a.run_8)},
       ${esc(a.skierg)}, ${esc(a.sled_push)}, ${esc(a.sled_pull)}, ${esc(a.burpee_jumps)},
       ${esc(a.rowing)}, ${esc(a.farmers_carry)}, ${esc(a.sandbag_lunges)}, ${esc(a.wall_balls)},
-      ${esc(a.roxzone)}
+      ${esc(a.roxzone)}, ${esc(a.mika_idp)}
     )`).join(',\n');
 
     const sql = `
@@ -359,7 +362,8 @@ async function upsertLiveAthletes(athletes) {
         total_time, overall_rank, division_rank, age_group_rank,
         run_1, run_2, run_3, run_4, run_5, run_6, run_7, run_8,
         skierg, sled_push, sled_pull, burpee_jumps,
-        rowing, farmers_carry, sandbag_lunges, wall_balls, roxzone
+        rowing, farmers_carry, sandbag_lunges, wall_balls, roxzone,
+        mika_idp
       ) VALUES ${rows}
       ON CONFLICT (race_id, full_name, division) DO UPDATE SET
         total_time     = EXCLUDED.total_time,
@@ -367,6 +371,7 @@ async function upsertLiveAthletes(athletes) {
         division_rank  = EXCLUDED.division_rank,
         age_group_rank = EXCLUDED.age_group_rank,
         bib_number     = COALESCE(EXCLUDED.bib_number, hyrox_athlete_results.bib_number),
+        mika_idp       = COALESCE(EXCLUDED.mika_idp, hyrox_athlete_results.mika_idp),
         nationality    = EXCLUDED.nationality,
         gender         = EXCLUDED.gender,
         age_group      = EXCLUDED.age_group,
