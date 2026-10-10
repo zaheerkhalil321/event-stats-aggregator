@@ -1,0 +1,14 @@
+[Unit]
+Description=libSQL sqld Database Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/sqld --db-path /var/lib/sqld_data --http-listen-addr 0.0.0.0:8080
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
