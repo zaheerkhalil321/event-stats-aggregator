@@ -821,7 +821,9 @@ async function main() {
       // 🛡️ 2. UPCOMING RACE CHECKPOINT: If race start date is in the future, register header & skip!
       if (isFutureRace && !isTargetingSpecificRace) {
         console.log(`   ⏩ [UPCOMING RACE] "${race.name}" (${race.id}) scheduled for ${race.date}. Skipping until event weekend.`);
-        await upsertLiveRaceHeader(race);
+        if (!existing) {
+          await upsertLiveRaceHeader(race);
+        }
         continue;
       }
 
