@@ -133,7 +133,8 @@ async function runQuery(sql, retries = 3, delayMs = 1500) {
       .replace(/::timestamptz/gi, '')
       .replace(/\bGREATEST\b/gi, 'MAX')
       .replace(/\bTRUNCATE\s+TABLE\s+([a-zA-Z0-9_]+)/gi, 'DELETE FROM $1')
-      .replace(/\bNOW\(\)/gi, 'CURRENT_TIMESTAMP');
+      .replace(/\bNOW\(\)/gi, 'CURRENT_TIMESTAMP')
+      .replace(/\bON CONFLICT \(race_id, full_name, division\)/gi, 'ON CONFLICT (race_id, full_name COLLATE NOCASE, division)');
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {

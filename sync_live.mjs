@@ -63,11 +63,11 @@ async function runQuery(sql, retries = 3, delayMs = 1500) {
   const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
   if (IS_TEST && !isSelect) return [{ count: 0 }];
 
-  // ⚡ 1. Primary: Turso Cloud Execution
   if (turso) {
     const cleanSql = sql
       .replace(/::text/gi, '')
-      .replace(/\bNOW\(\)/gi, 'CURRENT_TIMESTAMP');
+      .replace(/\bNOW\(\)/gi, 'CURRENT_TIMESTAMP')
+      .replace(/\bON CONFLICT \(race_id, full_name, division\)/gi, 'ON CONFLICT (race_id, full_name COLLATE NOCASE, division)');
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
