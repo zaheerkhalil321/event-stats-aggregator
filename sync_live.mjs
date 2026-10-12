@@ -40,7 +40,7 @@ const FORCE_RACE = process.argv.find(arg => arg.startsWith('--race='))?.split('=
 
 const splitsLimitArg = process.argv.find(arg => arg.startsWith('--splits='))?.split('=')[1]
                        || (process.argv.includes('--splits') ? process.argv[process.argv.indexOf('--splits') + 1] : null);
-const DEEP_SPLITS_LIMIT = splitsLimitArg ? (splitsLimitArg === 'all' || splitsLimitArg === 'Infinity' ? Infinity : parseInt(splitsLimitArg, 10)) : 50;
+const DEEP_SPLITS_LIMIT = splitsLimitArg ? (splitsLimitArg === 'all' || splitsLimitArg === 'Infinity' ? Infinity : parseInt(splitsLimitArg, 10)) : Infinity;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -304,6 +304,44 @@ async function scrapeSplits(page, athlete) {
     athlete.run_8 = getVal('Running 8');
     athlete.wall_balls = getVal('Wall Balls');
     athlete.roxzone = getVal('Roxzone', 'Roxzone Time');
+    athlete.run_total = getVal('Run Total');
+    athlete.best_run_lap = getVal('Best Run Lap');
+    athlete.penalty_time = getVal('Penalty', '*Penalty');
+    athlete.bonus_time = getVal('Bonus', '*Bonus');
+    athlete.disqual_reason = getVal('Disqual Reason');
+
+    // Extract station ranks from table rows
+    const stationRanks = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('table tr, .table tr'));
+      const ranks = {};
+      const mapping = [
+        ['skierg', 'skierg'],
+        ['sled_push', 'sled push'],
+        ['sled_pull', 'sled pull'],
+        ['burpee_jumps', 'burpee'],
+        ['rowing', 'row'],
+        ['farmers_carry', 'farmers'],
+        ['sandbag_lunges', 'sandbag'],
+        ['wall_balls', 'wall balls'],
+        ['roxzone', 'roxzone'],
+        ['run_total', 'run total'],
+        ['best_run_lap', 'best run lap']
+      ];
+      for (const r of rows) {
+        const th = r.querySelector('th')?.textContent?.toLowerCase() || '';
+        const lastTd = r.querySelector('td.last, td:last-child')?.textContent?.trim() || '';
+        const rankNum = parseInt(lastTd.replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(rankNum) && rankNum > 0) {
+          for (const [key, term] of mapping) {
+            if (th.includes(term) && !ranks[key]) {
+              ranks[key] = rankNum;
+            }
+          }
+        }
+      }
+      return Object.keys(ranks).length > 0 ? JSON.stringify(ranks) : null;
+    }).catch(() => null);
+    athlete.station_ranks = stationRanks;
 
     if (!athlete.roxzone || athlete.roxzone === '–') {
       const totalSec = timeToSeconds(athlete.total_time);
@@ -398,7 +436,9 @@ async function upsertLiveAthletes(athletes) {
       ${esc(a.run_5)}, ${esc(a.run_6)}, ${esc(a.run_7)}, ${esc(a.run_8)},
       ${esc(a.skierg)}, ${esc(a.sled_push)}, ${esc(a.sled_pull)}, ${esc(a.burpee_jumps)},
       ${esc(a.rowing)}, ${esc(a.farmers_carry)}, ${esc(a.sandbag_lunges)}, ${esc(a.wall_balls)},
-      ${esc(a.roxzone)}, ${esc(a.mika_idp)}
+      ${esc(a.roxzone)}, ${esc(a.mika_idp)},
+      ${esc(a.run_total)}, ${esc(a.best_run_lap)}, ${esc(a.penalty_time)},
+      ${esc(a.bonus_time)}, ${esc(a.disqual_reason)}, ${esc(a.station_ranks)}
     )`).join(',\n');
 
     const sql = `
@@ -409,7 +449,7 @@ async function upsertLiveAthletes(athletes) {
         run_1, run_2, run_3, run_4, run_5, run_6, run_7, run_8,
         skierg, sled_push, sled_pull, burpee_jumps,
         rowing, farmers_carry, sandbag_lunges, wall_balls, roxzone,
-        mika_idp
+        mika_idp, run_total, best_run_lap, penalty_time, bonus_time, disqual_reason, station_ranks
       ) VALUES ${rows}
       ON CONFLICT (race_id, full_name, division) DO UPDATE SET
         total_time     = EXCLUDED.total_time,
@@ -438,6 +478,12 @@ async function upsertLiveAthletes(athletes) {
         sandbag_lunges = COALESCE(EXCLUDED.sandbag_lunges, hyrox_athlete_results.sandbag_lunges),
         wall_balls     = COALESCE(EXCLUDED.wall_balls,     hyrox_athlete_results.wall_balls),
         roxzone        = COALESCE(EXCLUDED.roxzone,        hyrox_athlete_results.roxzone),
+        run_total      = COALESCE(EXCLUDED.run_total,      hyrox_athlete_results.run_total),
+        best_run_lap   = COALESCE(EXCLUDED.best_run_lap,   hyrox_athlete_results.best_run_lap),
+        penalty_time   = COALESCE(EXCLUDED.penalty_time,   hyrox_athlete_results.penalty_time),
+        bonus_time     = COALESCE(EXCLUDED.bonus_time,     hyrox_athlete_results.bonus_time),
+        disqual_reason = COALESCE(EXCLUDED.disqual_reason, hyrox_athlete_results.disqual_reason),
+        station_ranks  = COALESCE(EXCLUDED.station_ranks,  hyrox_athlete_results.station_ranks),
         updated_at     = NOW();
     `;
 

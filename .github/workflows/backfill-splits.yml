@@ -1,0 +1,74 @@
+name: ⚡ Deep Splits & Chip Ranks Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      race:
+        description: 'Target specific race slug (e.g. bordeaux-2026, stockholm-2025, or leave blank for all in season)'
+        required: false
+        default: ''
+        type: string
+      division:
+        description: 'Target specific division (e.g. "HYROX PRO WOMEN", or leave blank for all divisions)'
+        required: false
+        default: ''
+        type: string
+      season:
+        description: 'Season / Year filter (e.g. 2026, 2025, 2024)'
+        required: false
+        default: '2026'
+        type: choice
+        options:
+          - '2026'
+          - '2025'
+          - '2024'
+          - 'all'
+      concurrency:
+        description: 'Concurrent HTTP fetch threads'
+        required: false
+        default: '12'
+        type: string
+
+concurrency:
+  group: deep-splits-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: ⚡ Backfill Splits (${{ github.event.inputs.race || github.event.inputs.season }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # Up to 6 hours continuous cloud execution
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        run: npm install
+
+      - name: 🚀 Run High-Speed Splits Backfill Ingestor
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          FLAGS="--concurrency ${{ github.event.inputs.concurrency || '12' }}"
+
+          if [ -n "${{ github.event.inputs.race }}" ]; then
+            FLAGS="$FLAGS --race ${{ github.event.inputs.race }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.division }}" ]; then
+            FLAGS="$FLAGS --division \"${{ github.event.inputs.division }}\""
+          fi
+
+          if [ "${{ github.event.inputs.season }}" != "all" ] && [ -n "${{ github.event.inputs.season }}" ]; then
+            FLAGS="$FLAGS --season ${{ github.event.inputs.season }}"
+          fi
+
+          echo "Executing: node scripts/backfill_splits.mjs $FLAGS"
+          node scripts/backfill_splits.mjs $FLAGS
