@@ -162,7 +162,10 @@ export function parseDeepDetail(html) {
     const m = html.match(re);
     if (!m) return null;
     const clean = m[1].replace(/<[^>]+>/g, '').replace(/&ndash;/g, '').replace(/[–—]/g, '').trim();
-    return clean && clean !== '-' ? clean : null;
+    if (!clean || clean === '-' || clean.startsWith('*') || clean.toLowerCase().includes('disqual reason')) {
+      return null;
+    }
+    return clean;
   };
 
   // Station place ranks from chip timing sensors
@@ -248,19 +251,21 @@ async function fetchDetailHtml(url, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(url, {
+        signal: AbortSignal.timeout(6000),
         headers: {
           'User-Agent': USER_AGENT,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
         },
       });
       if (res.status === 200) {
         return await res.text();
       }
       if (res.status === 403 || res.status === 429) {
-        await sleep(500 * (attempt + 1));
+        await sleep(300 * (attempt + 1));
       }
     } catch (_) {
-      await sleep(300 * (attempt + 1));
+      await sleep(150 * (attempt + 1));
     }
   }
   return null;
@@ -373,12 +378,19 @@ async function main() {
 
   // Cache wave candidate values by race+division key
   const waveCache = new Map();
+  const lastSuccessfulWave = new Map();
+
   function getWaves(city, division) {
     const key = `${city}:::${division}`;
     if (!waveCache.has(key)) {
       waveCache.set(key, findWaveCandidates(optgroups, city, division));
     }
-    return waveCache.get(key);
+    const rawWaves = waveCache.get(key) || [];
+    const lastWave = lastSuccessfulWave.get(key);
+    if (lastWave && rawWaves.includes(lastWave)) {
+      return [lastWave, ...rawWaves.filter((w) => w !== lastWave)];
+    }
+    return rawWaves;
   }
 
   const pool = [];
@@ -411,6 +423,9 @@ async function main() {
             });
             successCount++;
             matched = true;
+            if (wVal) {
+              lastSuccessfulWave.set(`${String(a.city || a.race_name)}:::${String(a.division)}`, wVal);
+            }
             break;
           }
         }
@@ -425,14 +440,17 @@ async function main() {
       pool.length = 0;
       processedCount = i + 1;
 
-      if (updatesBatch.length >= 25 || i === athletes.length - 1) {
+      if (updatesBatch.length >= 10 || i === athletes.length - 1) {
         await flushBatch();
       }
 
-      process.stdout.write(
-        `⚡ Processed: ${processedCount.toLocaleString()} / ${athletes.length.toLocaleString()} | Updated: ${successCount.toLocaleString()}\r`
-      );
-      await sleep(50);
+      const progressMsg = `⚡ Processed: ${processedCount.toLocaleString()} / ${athletes.length.toLocaleString()} | Updated: ${successCount.toLocaleString()}`;
+      if (processedCount % 50 === 0 || i === athletes.length - 1) {
+        console.log(`[${new Date().toISOString().slice(11, 19)}] ${progressMsg}`);
+      } else {
+        process.stdout.write(`${progressMsg}\r`);
+      }
+      await sleep(25);
     }
   }
 
@@ -446,7 +464,9 @@ async function main() {
   console.log(`   Success Rate: ${processedCount > 0 ? ((successCount / processedCount) * 100).toFixed(1) : 0}%`);
 }
 
-main().catch((err) => {
-  console.error('\n❌ Fatal backfill error:', err);
-  process.exit(1);
-});
+if (!process.argv[1] || process.argv[1].endsWith('backfill_splits.mjs')) {
+  main().catch((err) => {
+    console.error('\n❌ Fatal backfill error:', err);
+    process.exit(1);
+  });
+}

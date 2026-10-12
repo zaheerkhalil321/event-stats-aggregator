@@ -60,14 +60,12 @@ jobs:
 
           if [ -n "${{ github.event.inputs.race }}" ]; then
             FLAGS="$FLAGS --race ${{ github.event.inputs.race }}"
+          elif [ "${{ github.event.inputs.season }}" != "all" ] && [ -n "${{ github.event.inputs.season }}" ]; then
+            FLAGS="$FLAGS --season ${{ github.event.inputs.season }}"
           fi
 
           if [ -n "${{ github.event.inputs.division }}" ]; then
             FLAGS="$FLAGS --division \"${{ github.event.inputs.division }}\""
-          fi
-
-          if [ "${{ github.event.inputs.season }}" != "all" ] && [ -n "${{ github.event.inputs.season }}" ]; then
-            FLAGS="$FLAGS --season ${{ github.event.inputs.season }}"
           fi
 
           echo "Executing: node scripts/backfill_splits.mjs $FLAGS"
