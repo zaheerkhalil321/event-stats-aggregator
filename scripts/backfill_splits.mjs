@@ -251,7 +251,7 @@ async function fetchDetailHtml(url, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(7000),
         headers: {
           'User-Agent': USER_AGENT,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -262,10 +262,10 @@ async function fetchDetailHtml(url, maxRetries = 2) {
         return await res.text();
       }
       if (res.status === 403 || res.status === 429) {
-        await sleep(300 * (attempt + 1));
+        await sleep(1500 * (attempt + 1));
       }
     } catch (_) {
-      await sleep(150 * (attempt + 1));
+      await sleep(250 * (attempt + 1));
     }
   }
   return null;
@@ -464,7 +464,7 @@ async function main() {
   console.log(`   Success Rate: ${processedCount > 0 ? ((successCount / processedCount) * 100).toFixed(1) : 0}%`);
 }
 
-if (!process.argv[1] || process.argv[1].endsWith('backfill_splits.mjs')) {
+if (process.argv[1] && process.argv[1].endsWith('backfill_splits.mjs')) {
   main().catch((err) => {
     console.error('\n❌ Fatal backfill error:', err);
     process.exit(1);
