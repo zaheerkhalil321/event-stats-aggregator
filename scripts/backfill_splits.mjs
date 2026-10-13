@@ -283,7 +283,7 @@ async function fetchDetailHtml(url, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(7000),
+        signal: AbortSignal.timeout(5000),
         headers: {
           'User-Agent': USER_AGENT,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -294,10 +294,10 @@ async function fetchDetailHtml(url, maxRetries = 2) {
         return await res.text();
       }
       if (res.status === 403 || res.status === 429) {
-        await sleep(1500 * (attempt + 1));
+        await sleep(1000 * (attempt + 1));
       }
     } catch (_) {
-      await sleep(250 * (attempt + 1));
+      await sleep(150 * (attempt + 1));
     }
   }
   return null;
@@ -420,7 +420,16 @@ async function main() {
         `,
       }));
 
-      await client.batch(statements, 'write');
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await client.batch(statements, 'write');
+          break;
+        } catch (err) {
+          console.warn(`⚠️ [Flush] Turso batch write attempt ${attempt} failed:`, err.message);
+          if (attempt === 3) throw err;
+          await sleep(1000 * attempt);
+        }
+      }
       updatesBatch.length = 0;
     }
 
@@ -446,7 +455,10 @@ async function main() {
     for (let i = 0; i < athletes.length; i++) {
       const a = athletes[i];
       const sSlug = getSeasonSlug(String(a.race_id), String(a.season));
-      const waves = await getWaves(String(a.city || a.race_name), String(a.division), sSlug);
+      const cityOrName = String(a.city || a.race_name);
+      const divStr = String(a.division);
+      const cacheKey = `${sSlug}:::${cityOrName}:::${divStr}`;
+      const waves = await getWaves(cityOrName, divStr, sSlug);
 
       const task = (async () => {
         // Form candidate IDPs and waves (handle _BOD or _OVERALL suffixes for doubles)
@@ -476,7 +488,7 @@ async function main() {
               successCount++;
               matched = true;
               if (wVal) {
-                lastSuccessfulWave.set(`${String(a.city || a.race_name)}:::${String(a.division)}`, wVal);
+                lastSuccessfulWave.set(cacheKey, wVal);
               }
               break;
             }
