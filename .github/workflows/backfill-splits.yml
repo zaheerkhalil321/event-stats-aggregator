@@ -24,9 +24,9 @@ on:
           - '2024'
           - 'all'
       concurrency:
-        description: 'Concurrent HTTP fetch threads (35 is recommended for optimal speed and zero block risk)'
+        description: 'Concurrent HTTP fetch threads (100 is optimal maximum speed)'
         required: false
-        default: '35'
+        default: '100'
         type: string
 
 concurrency:
@@ -56,7 +56,7 @@ jobs:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
-          FLAGS="--concurrency ${{ github.event.inputs.concurrency || '35' }}"
+          FLAGS="--concurrency ${{ github.event.inputs.concurrency || '100' }}"
 
           if [ -n "${{ github.event.inputs.race }}" ]; then
             FLAGS="$FLAGS --race ${{ github.event.inputs.race }}"
