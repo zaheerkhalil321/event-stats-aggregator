@@ -309,6 +309,7 @@ async function scrapeSplits(page, athlete) {
     athlete.penalty_time = getVal('Penalty', '*Penalty');
     athlete.bonus_time = getVal('Bonus', '*Bonus');
     athlete.disqual_reason = getVal('Disqual Reason');
+    athlete.bib_number = athlete.bib_number || getVal('Bib Number', 'Bib', 'Startnummer');
 
     // Extract station ranks from table rows
     const stationRanks = await page.evaluate(() => {

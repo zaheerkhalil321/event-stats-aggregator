@@ -168,6 +168,11 @@ export function parseDeepDetail(html) {
     return clean;
   };
 
+  const getBib = () => {
+    const m = html.match(/<td[^>]*class="[^"]*f-start_no_text[^"]*"[^>]*>([0-9]+)<\/td>/i);
+    return m ? m[1].trim() : null;
+  };
+
   // Station place ranks from chip timing sensors
   const stationRanks = {};
   const stationCodes = [
@@ -239,6 +244,7 @@ export function parseDeepDetail(html) {
     penalty_time: getText('f-gimmick_01'),
     bonus_time: getText('f-gimmick_04'),
     disqual_reason: getText('f-disqual_reason'),
+    bib_number: getBib(),
     gender_rank: mwRank,
     age_group_rank: agRank,
     station_ranks: Object.keys(stationRanks).length > 0 ? JSON.stringify(stationRanks) : null,
@@ -356,6 +362,7 @@ async function main() {
           penalty_time = ${esc(u.penalty_time)},
           bonus_time = ${esc(u.bonus_time)},
           disqual_reason = ${esc(u.disqual_reason)},
+          bib_number = COALESCE(bib_number, ${esc(u.bib_number)}),
           gender_rank = COALESCE(${u.gender_rank ?? 'NULL'}, gender_rank),
           age_group_rank = COALESCE(${u.age_group_rank ?? 'NULL'}, age_group_rank),
           station_ranks = ${esc(u.station_ranks)},
