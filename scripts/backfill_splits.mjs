@@ -49,7 +49,7 @@ const TARGET_DIV = getArg('division', null);
 const TARGET_SEASON = getArg('season', null);
 const LIMIT = getArg('limit', null) ? parseInt(getArg('limit'), 10) : null;
 const IS_TEST = args.includes('--test');
-const CONCURRENCY = getArg('concurrency', '10') ? parseInt(getArg('concurrency', '10'), 10) : 10;
+const CONCURRENCY = getArg('concurrency', '35') ? parseInt(getArg('concurrency', '35'), 10) : 35;
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -477,7 +477,7 @@ async function main() {
       pool.length = 0;
       processedCount = i + 1;
 
-      if (updatesBatch.length >= 10 || i === athletes.length - 1) {
+      if (updatesBatch.length >= 100 || i === athletes.length - 1) {
         await flushBatch();
       }
 
