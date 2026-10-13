@@ -49,7 +49,7 @@ const TARGET_DIV = getArg('division', null);
 const TARGET_SEASON = getArg('season', null);
 const LIMIT = getArg('limit', null) ? parseInt(getArg('limit'), 10) : null;
 const IS_TEST = args.includes('--test');
-const CONCURRENCY = getArg('concurrency', '100') ? parseInt(getArg('concurrency', '100'), 10) : 100;
+const CONCURRENCY = getArg('concurrency', '10') ? parseInt(getArg('concurrency', '10'), 10) : 10;
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -279,11 +279,36 @@ export function parseDeepDetail(html) {
   };
 }
 
+// Circuit breaker state: detects IP blocks / throttling instead of failing silently
+let consecutiveFailures = 0;
+let cooldownUntil = 0;
+let cooldownCount = 0;
+const failureStats = {};
+const MAX_COOLDOWNS = 5;
+
+function recordFailure(reason) {
+  failureStats[reason] = (failureStats[reason] || 0) + 1;
+  consecutiveFailures++;
+  if (failureStats[reason] <= 3) console.warn(`\n⚠️ Fetch failure: ${reason}`);
+  if (consecutiveFailures >= 40 && Date.now() > cooldownUntil) {
+    cooldownCount++;
+    if (cooldownCount > MAX_COOLDOWNS) {
+      console.error(`\n🛑 Mika Timing keeps failing (${JSON.stringify(failureStats)}). IP is likely blocked/throttled. Aborting — re-run from another IP (local/VPS). Already-saved progress is kept.`);
+      process.exit(2);
+    }
+    cooldownUntil = Date.now() + 60_000 * cooldownCount;
+    console.warn(`\n⏸️ ${consecutiveFailures} consecutive failures ${JSON.stringify(failureStats)} — cooling down ${cooldownCount} min (${cooldownCount}/${MAX_COOLDOWNS})...`);
+    consecutiveFailures = 0;
+  }
+}
+
 async function fetchDetailHtml(url, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const wait = cooldownUntil - Date.now();
+    if (wait > 0) await sleep(wait);
     try {
       const res = await fetch(url, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10000),
         headers: {
           'User-Agent': USER_AGENT,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -291,12 +316,15 @@ async function fetchDetailHtml(url, maxRetries = 2) {
         },
       });
       if (res.status === 200) {
+        consecutiveFailures = 0;
         return await res.text();
       }
+      recordFailure(`HTTP ${res.status}`);
       if (res.status === 403 || res.status === 429) {
         await sleep(1000 * (attempt + 1));
       }
-    } catch (_) {
+    } catch (err) {
+      recordFailure(err.name || 'network-error');
       await sleep(150 * (attempt + 1));
     }
   }
@@ -529,7 +557,7 @@ async function main() {
         } else {
           process.stdout.write(`${progressMsg}\r`);
         }
-        await sleep(25);
+        await sleep(100);
       }
     }
 

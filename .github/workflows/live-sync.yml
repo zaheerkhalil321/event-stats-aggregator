@@ -7,7 +7,7 @@ on:
       race:
         description: 'Target specific race (e.g. athens, acapulco, all, or leave blank for active live races)'
         required: false
-        default: 'all'
+        default: ''
         type: string
       splits:
         description: 'Deep splits limit per division (default: all for full chip split accuracy, or specific number)'

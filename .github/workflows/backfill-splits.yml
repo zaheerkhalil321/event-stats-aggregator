@@ -24,9 +24,9 @@ on:
           - '2024'
           - 'all'
       concurrency:
-        description: 'Concurrent HTTP fetch threads (20 is optimal safe speed)'
+        description: 'Concurrent HTTP fetch threads (10 is optimal safe speed)'
         required: false
-        default: '20'
+        default: '10'
         type: string
 
 concurrency:
@@ -37,7 +37,7 @@ jobs:
   backfill:
     name: ⚡ Backfill Splits (${{ github.event.inputs.race || github.event.inputs.season }})
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # Up to 6 hours continuous cloud execution
+    timeout-minutes: 120
 
     steps:
       - name: 📦 Checkout repository
