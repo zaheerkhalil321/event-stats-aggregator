@@ -10,9 +10,9 @@ on:
         default: ''
         type: string
       splits:
-        description: 'Deep splits limit per division (default: all for full chip split accuracy, or specific number)'
+        description: 'Deep splits limit per division (default: 20 for fast live runs, or all for full chip split accuracy)'
         required: false
-        default: 'all'
+        default: '20'
         type: string
       dry_run:
         description: 'Dry run (no DB writes)?'
