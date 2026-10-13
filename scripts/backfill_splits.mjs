@@ -329,176 +329,191 @@ async function main() {
   if (LIMIT) console.log(`Limit:           ${LIMIT}`);
   console.log('-------------------------------------------------------------\n');
 
-  let query = `
-    SELECT 
-      a.id, a.race_id, a.full_name, a.division, a.mika_idp,
-      r.season, r.city, r.date, r.name as race_name
-    FROM hyrox_athlete_results a
-    JOIN hyrox_races r ON a.race_id = r.id
-    WHERE (a.run_1 IS NULL OR a.run_1 = '') AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
-  `;
+  let passNumber = 1;
 
-  if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
-  if (TARGET_DIV) query += ` AND a.division = ${esc(TARGET_DIV)}`;
-  if (TARGET_SEASON) query += ` AND (r.season = ${esc(TARGET_SEASON)} OR r.date LIKE '${TARGET_SEASON}%')`;
+  while (true) {
+    let query = `
+      SELECT 
+        a.id, a.race_id, a.full_name, a.division, a.mika_idp,
+        r.season, r.city, r.date, r.name as race_name
+      FROM hyrox_athlete_results a
+      JOIN hyrox_races r ON a.race_id = r.id
+      WHERE (a.run_1 IS NULL OR a.run_1 = '') AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
+    `;
 
-  query += ` ORDER BY a.race_id, a.division, a.id ASC`;
-  if (LIMIT) query += ` LIMIT ${LIMIT}`;
-
-  console.log('🔍 Querying target athletes needing splits from Turso...');
-  const res = await client.execute(query);
-  const athletes = res.rows;
-
-  if (athletes.length === 0) {
-    console.log('✅ No pending athletes found matching criteria. Database is already complete!');
-    return;
-  }
-
-  console.log(`📊 Found ${athletes.length.toLocaleString()} athletes requiring deep split backfill.\n`);
-
-  let processedCount = 0;
-  let successCount = 0;
-  const updatesBatch = [];
-
-  async function flushBatch() {
-    if (updatesBatch.length === 0 || IS_TEST) return;
-    const statements = updatesBatch.map((u) => ({
-      sql: `
-        UPDATE hyrox_athlete_results
-        SET 
-          run_1 = ${esc(u.run_1)},
-          skierg = ${esc(u.skierg)},
-          run_2 = ${esc(u.run_2)},
-          sled_push = ${esc(u.sled_push)},
-          run_3 = ${esc(u.run_3)},
-          sled_pull = ${esc(u.sled_pull)},
-          run_4 = ${esc(u.run_4)},
-          burpee_jumps = ${esc(u.burpee_jumps)},
-          run_5 = ${esc(u.run_5)},
-          rowing = ${esc(u.rowing)},
-          run_6 = ${esc(u.run_6)},
-          farmers_carry = ${esc(u.farmers_carry)},
-          run_7 = ${esc(u.run_7)},
-          sandbag_lunges = ${esc(u.sandbag_lunges)},
-          run_8 = ${esc(u.run_8)},
-          wall_balls = ${esc(u.wall_balls)},
-          roxzone = ${esc(u.roxzone)},
-          run_total = ${esc(u.run_total)},
-          best_run_lap = ${esc(u.best_run_lap)},
-          penalty_time = ${esc(u.penalty_time)},
-          bonus_time = ${esc(u.bonus_time)},
-          disqual_reason = ${esc(u.disqual_reason)},
-          bib_number = COALESCE(${esc(u.bib_number)}, bib_number),
-          nationality = CASE WHEN nationality IS NULL OR nationality = 'XX' OR nationality = '' THEN COALESCE(${esc(u.nationality)}, nationality) ELSE nationality END,
-          age_group = COALESCE(${esc(u.age_group)}, age_group),
-          start_wave = COALESCE(${esc(u.start_wave)}, start_wave),
-          start_time = COALESCE(${esc(u.start_time)}, start_time),
-          gender_rank = COALESCE(${u.gender_rank ?? 'NULL'}, gender_rank),
-          age_group_rank = COALESCE(${u.age_group_rank ?? 'NULL'}, age_group_rank),
-          station_ranks = ${esc(u.station_ranks)},
-          team_members = COALESCE(${esc(u.team_members)}, team_members),
-          cumulative_times = ${esc(u.cumulative_times)},
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ${u.id};
-      `,
-    }));
-
-    await client.batch(statements, 'write');
-    updatesBatch.length = 0;
-  }
-
-  // Pre-load wave optgroups for active seasons
-  const seasonSlug = getSeasonSlug(String(athletes[0].race_id), String(athletes[0].season));
-  console.log(`🌐 Loading official heat & wave categories for ${seasonSlug}...`);
-  const optgroups = await getOptgroupsForSeason(seasonSlug);
-  console.log(`📋 Found ${optgroups.length} event optgroups in ${seasonSlug}.\n`);
-
-  // Cache wave candidate values by race+division key
-  const waveCache = new Map();
-  const lastSuccessfulWave = new Map();
-
-  function getWaves(city, division) {
-    const key = `${city}:::${division}`;
-    if (!waveCache.has(key)) {
-      waveCache.set(key, findWaveCandidates(optgroups, city, division));
-    }
-    const rawWaves = waveCache.get(key) || [];
-    const lastWave = lastSuccessfulWave.get(key);
-    if (lastWave && rawWaves.includes(lastWave)) {
-      return [lastWave, ...rawWaves.filter((w) => w !== lastWave)];
-    }
-    return rawWaves;
-  }
-
-  const pool = [];
-  for (let i = 0; i < athletes.length; i++) {
-    const a = athletes[i];
-    const sSlug = getSeasonSlug(String(a.race_id), String(a.season));
-    const waves = getWaves(String(a.city || a.race_name), String(a.division));
-
-    const task = (async () => {
-      // Form candidate IDPs and waves (handle _BOD or _OVERALL suffixes for doubles)
-      const idpCandidates = [a.mika_idp];
-      if (a.division.includes('DOUBLES') || a.division.includes('RELAY')) {
-        const cityPrefix = String(a.city || '').slice(0, 3).toUpperCase();
-        if (cityPrefix) idpCandidates.push(`${a.mika_idp}_${cityPrefix}`);
-      }
-
-      for (const curIdp of idpCandidates) {
-        let matched = false;
-        for (const wVal of (waves.length > 0 ? waves : [''])) {
-          const eventParam = wVal ? `&event=${wVal}` : '';
-          const detailUrl = `https://hyrox.r.mikatiming.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
-          const html = await fetchDetailHtml(detailUrl);
-          if (!html) continue;
-
-          const parsed = parseDeepDetail(html);
-          if (parsed.run_1 || parsed.skierg || parsed.run_total) {
-            updatesBatch.push({
-              id: a.id,
-              ...parsed,
-            });
-            successCount++;
-            matched = true;
-            if (wVal) {
-              lastSuccessfulWave.set(`${String(a.city || a.race_name)}:::${String(a.division)}`, wVal);
-            }
-            break;
-          }
-        }
-        if (matched) break;
-      }
-    })();
-
-    pool.push(task);
-
-    if (pool.length >= CONCURRENCY || i === athletes.length - 1) {
-      await Promise.all(pool);
-      pool.length = 0;
-      processedCount = i + 1;
-
-      if (updatesBatch.length >= 100 || i === athletes.length - 1) {
-        await flushBatch();
-      }
-
-      const progressMsg = `⚡ Processed: ${processedCount.toLocaleString()} / ${athletes.length.toLocaleString()} | Updated: ${successCount.toLocaleString()}`;
-      if (processedCount % 50 === 0 || i === athletes.length - 1) {
-        console.log(`[${new Date().toISOString().slice(11, 19)}] ${progressMsg}`);
+    if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
+    if (TARGET_DIV) query += ` AND a.division = ${esc(TARGET_DIV)}`;
+    if (TARGET_SEASON) {
+      if (TARGET_SEASON === '2026') {
+        query += ` AND (r.season = '2026' OR r.season = '25/26' OR r.season = '26/27' OR r.season = 'season-9' OR r.date LIKE '2026%' OR a.race_id LIKE '%2026%')`;
+      } else if (TARGET_SEASON === '2025') {
+        query += ` AND (r.season = '2025' OR r.season = '24/25' OR r.season = 'season-8' OR r.date LIKE '2025%' OR a.race_id LIKE '%2025%')`;
+      } else if (TARGET_SEASON === '2024') {
+        query += ` AND (r.season = '2024' OR r.season = '23/24' OR r.season = 'season-7' OR r.date LIKE '2024%' OR a.race_id LIKE '%2024%')`;
       } else {
-        process.stdout.write(`${progressMsg}\r`);
+        query += ` AND (r.season = ${esc(TARGET_SEASON)} OR r.date LIKE '${TARGET_SEASON}%' OR a.race_id LIKE '%${TARGET_SEASON}%')`;
       }
-      await sleep(25);
     }
-  }
 
-  if (updatesBatch.length > 0) {
-    await flushBatch();
-  }
+    query += ` ORDER BY a.race_id, a.division, a.id ASC`;
+    if (LIMIT) query += ` LIMIT ${LIMIT}`;
 
-  console.log(`\n\n🎉 Backfill Complete!`);
-  console.log(`   Total Processed: ${processedCount.toLocaleString()}`);
-  console.log(`   Successfully Enriched: ${successCount.toLocaleString()}`);
-  console.log(`   Success Rate: ${processedCount > 0 ? ((successCount / processedCount) * 100).toFixed(1) : 0}%`);
+    console.log(`\n🔍 [Pass ${passNumber}] Querying target athletes needing splits from Turso...`);
+    const res = await client.execute(query);
+    const athletes = res.rows;
+
+    if (athletes.length === 0) {
+      console.log(`\n🎉 100% COMPLETE! All target events & athletes have deep splits. Zero pending records!`);
+      break;
+    }
+
+    console.log(`📊 Found ${athletes.length.toLocaleString()} athletes requiring deep split backfill.\n`);
+
+    let processedCount = 0;
+    let successCount = 0;
+    const updatesBatch = [];
+
+    async function flushBatch() {
+      if (updatesBatch.length === 0 || IS_TEST) return;
+      const statements = updatesBatch.map((u) => ({
+        sql: `
+          UPDATE hyrox_athlete_results
+          SET 
+            run_1 = ${esc(u.run_1)},
+            skierg = ${esc(u.skierg)},
+            run_2 = ${esc(u.run_2)},
+            sled_push = ${esc(u.sled_push)},
+            run_3 = ${esc(u.run_3)},
+            sled_pull = ${esc(u.sled_pull)},
+            run_4 = ${esc(u.run_4)},
+            burpee_jumps = ${esc(u.burpee_jumps)},
+            run_5 = ${esc(u.run_5)},
+            rowing = ${esc(u.rowing)},
+            run_6 = ${esc(u.run_6)},
+            farmers_carry = ${esc(u.farmers_carry)},
+            run_7 = ${esc(u.run_7)},
+            sandbag_lunges = ${esc(u.sandbag_lunges)},
+            run_8 = ${esc(u.run_8)},
+            wall_balls = ${esc(u.wall_balls)},
+            roxzone = ${esc(u.roxzone)},
+            run_total = ${esc(u.run_total)},
+            best_run_lap = ${esc(u.best_run_lap)},
+            penalty_time = ${esc(u.penalty_time)},
+            bonus_time = ${esc(u.bonus_time)},
+            disqual_reason = ${esc(u.disqual_reason)},
+            bib_number = COALESCE(${esc(u.bib_number)}, bib_number),
+            nationality = CASE WHEN nationality IS NULL OR nationality = 'XX' OR nationality = '' THEN COALESCE(${esc(u.nationality)}, nationality) ELSE nationality END,
+            age_group = COALESCE(${esc(u.age_group)}, age_group),
+            start_wave = COALESCE(${esc(u.start_wave)}, start_wave),
+            start_time = COALESCE(${esc(u.start_time)}, start_time),
+            gender_rank = COALESCE(${u.gender_rank ?? 'NULL'}, gender_rank),
+            age_group_rank = COALESCE(${u.age_group_rank ?? 'NULL'}, age_group_rank),
+            station_ranks = ${esc(u.station_ranks)},
+            team_members = COALESCE(${esc(u.team_members)}, team_members),
+            cumulative_times = ${esc(u.cumulative_times)},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${u.id};
+        `,
+      }));
+
+      await client.batch(statements, 'write');
+      updatesBatch.length = 0;
+    }
+
+    // Cache wave candidate values by race+division key
+    const waveCache = new Map();
+    const lastSuccessfulWave = new Map();
+
+    async function getWaves(city, division, sSlug) {
+      const key = `${sSlug}:::${city}:::${division}`;
+      if (!waveCache.has(key)) {
+        const optgroups = await getOptgroupsForSeason(sSlug);
+        waveCache.set(key, findWaveCandidates(optgroups, city, division));
+      }
+      const rawWaves = waveCache.get(key) || [];
+      const lastWave = lastSuccessfulWave.get(key);
+      if (lastWave && rawWaves.includes(lastWave)) {
+        return [lastWave, ...rawWaves.filter((w) => w !== lastWave)];
+      }
+      return rawWaves;
+    }
+
+    const pool = [];
+    for (let i = 0; i < athletes.length; i++) {
+      const a = athletes[i];
+      const sSlug = getSeasonSlug(String(a.race_id), String(a.season));
+      const waves = await getWaves(String(a.city || a.race_name), String(a.division), sSlug);
+
+      const task = (async () => {
+        // Form candidate IDPs and waves (handle _BOD or _OVERALL suffixes for doubles)
+        const idpCandidates = [a.mika_idp];
+        if (a.division.includes('DOUBLES') || a.division.includes('RELAY')) {
+          const cityPrefix = String(a.city || '').slice(0, 3).toUpperCase();
+          if (cityPrefix) idpCandidates.push(`${a.mika_idp}_${cityPrefix}`);
+        }
+
+        for (const curIdp of idpCandidates) {
+          let matched = false;
+          for (const wVal of (waves.length > 0 ? waves : [''])) {
+            const eventParam = wVal ? `&event=${wVal}` : '';
+            const detailUrl = `https://hyrox.r.mikatiming.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
+            const html = await fetchDetailHtml(detailUrl);
+            if (!html) continue;
+
+            const parsed = parseDeepDetail(html);
+            if (parsed.run_1 || parsed.skierg || parsed.run_total) {
+              updatesBatch.push({
+                id: a.id,
+                ...parsed,
+              });
+              successCount++;
+              matched = true;
+              if (wVal) {
+                lastSuccessfulWave.set(`${String(a.city || a.race_name)}:::${String(a.division)}`, wVal);
+              }
+              break;
+            }
+          }
+          if (matched) break;
+        }
+      })();
+
+      pool.push(task);
+
+      if (pool.length >= CONCURRENCY || i === athletes.length - 1) {
+        await Promise.all(pool);
+        pool.length = 0;
+        processedCount = i + 1;
+
+        if (updatesBatch.length >= 100 || i === athletes.length - 1) {
+          await flushBatch();
+        }
+
+        const progressMsg = `⚡ Processed: ${processedCount.toLocaleString()} / ${athletes.length.toLocaleString()} | Updated: ${successCount.toLocaleString()}`;
+        if (processedCount % 50 === 0 || i === athletes.length - 1) {
+          console.log(`[${new Date().toISOString().slice(11, 19)}] ${progressMsg}`);
+        } else {
+          process.stdout.write(`${progressMsg}\r`);
+        }
+        await sleep(25);
+      }
+    }
+
+    if (updatesBatch.length > 0) {
+      await flushBatch();
+    }
+
+    console.log(`\n🎉 Pass ${passNumber} Complete!`);
+    console.log(`   Total Processed: ${processedCount.toLocaleString()}`);
+    console.log(`   Successfully Enriched: ${successCount.toLocaleString()}`);
+    console.log(`   Success Rate: ${processedCount > 0 ? ((successCount / processedCount) * 100).toFixed(1) : 0}%`);
+
+    if (LIMIT || IS_TEST) {
+      break;
+    }
+
+    passNumber++;
+  }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('backfill_splits.mjs')) {
