@@ -330,6 +330,8 @@ async function main() {
   console.log('-------------------------------------------------------------\n');
 
   let passNumber = 1;
+  let totalEnrichedAll = 0;
+  let totalProcessedAll = 0;
 
   while (true) {
     let query = `
@@ -356,9 +358,9 @@ async function main() {
     }
 
     query += ` ORDER BY a.race_id, a.division, a.id ASC`;
-    if (LIMIT) query += ` LIMIT ${LIMIT}`;
+    query += ` LIMIT ${LIMIT || 3000}`;
 
-    console.log(`\n🔍 [Pass ${passNumber}] Querying target athletes needing splits from Turso...`);
+    console.log(`\n🔍 [Pass ${passNumber}] Querying batch of pending athletes from Turso...`);
     const res = await client.execute(query);
     const athletes = res.rows;
 
@@ -367,7 +369,7 @@ async function main() {
       break;
     }
 
-    console.log(`📊 Found ${athletes.length.toLocaleString()} athletes requiring deep split backfill.\n`);
+    console.log(`📊 Found ${athletes.length.toLocaleString()} athletes in current pass requiring deep split backfill.\n`);
 
     let processedCount = 0;
     let successCount = 0;
@@ -503,10 +505,12 @@ async function main() {
       await flushBatch();
     }
 
+    totalEnrichedAll += successCount;
+    totalProcessedAll += processedCount;
+
     console.log(`\n🎉 Pass ${passNumber} Complete!`);
-    console.log(`   Total Processed: ${processedCount.toLocaleString()}`);
-    console.log(`   Successfully Enriched: ${successCount.toLocaleString()}`);
-    console.log(`   Success Rate: ${processedCount > 0 ? ((successCount / processedCount) * 100).toFixed(1) : 0}%`);
+    console.log(`   Processed in Pass: ${processedCount.toLocaleString()} | Enriched: ${successCount.toLocaleString()}`);
+    console.log(`   Cumulative Enriched So Far: ${totalEnrichedAll.toLocaleString()}`);
 
     if (LIMIT || IS_TEST) {
       break;
@@ -514,6 +518,10 @@ async function main() {
 
     passNumber++;
   }
+
+  console.log(`\n\n🏁 Backfill Engine Finished!`);
+  console.log(`   Grand Total Processed: ${totalProcessedAll.toLocaleString()}`);
+  console.log(`   Grand Total Enriched:  ${totalEnrichedAll.toLocaleString()}`);
 }
 
 if (process.argv[1] && process.argv[1].endsWith('backfill_splits.mjs')) {
