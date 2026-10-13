@@ -332,6 +332,7 @@ async function main() {
   let passNumber = 1;
   let totalEnrichedAll = 0;
   let totalProcessedAll = 0;
+  let lastMaxId = 0;
 
   while (true) {
     let query = `
@@ -340,7 +341,7 @@ async function main() {
         r.season, r.city, r.date, r.name as race_name
       FROM hyrox_athlete_results a
       JOIN hyrox_races r ON a.race_id = r.id
-      WHERE (a.run_1 IS NULL OR a.run_1 = '') AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
+      WHERE a.id > ${lastMaxId} AND (a.run_1 IS NULL OR a.run_1 = '') AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
     `;
 
     if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
@@ -357,10 +358,10 @@ async function main() {
       }
     }
 
-    query += ` ORDER BY a.race_id, a.division, a.id ASC`;
+    query += ` ORDER BY a.id ASC`;
     query += ` LIMIT ${LIMIT || 3000}`;
 
-    console.log(`\n🔍 [Pass ${passNumber}] Querying batch of pending athletes from Turso...`);
+    console.log(`\n🔍 [Pass ${passNumber}] Querying batch of pending athletes from Turso (cursor a.id > ${lastMaxId})...`);
     const res = await client.execute(query);
     const athletes = res.rows;
 
@@ -369,7 +370,8 @@ async function main() {
       break;
     }
 
-    console.log(`📊 Found ${athletes.length.toLocaleString()} athletes in current pass requiring deep split backfill.\n`);
+    lastMaxId = athletes[athletes.length - 1].id;
+    console.log(`📊 Found ${athletes.length.toLocaleString()} athletes in current pass (ID range ${athletes[0].id} -> ${lastMaxId}).\n`);
 
     let processedCount = 0;
     let successCount = 0;
@@ -454,16 +456,19 @@ async function main() {
           if (cityPrefix) idpCandidates.push(`${a.mika_idp}_${cityPrefix}`);
         }
 
+        let matched = false;
+        let lastHtml = null;
         for (const curIdp of idpCandidates) {
-          let matched = false;
           for (const wVal of (waves.length > 0 ? waves : [''])) {
             const eventParam = wVal ? `&event=${wVal}` : '';
             const detailUrl = `https://hyrox.r.mikatiming.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
             const html = await fetchDetailHtml(detailUrl);
             if (!html) continue;
+            lastHtml = html;
 
             const parsed = parseDeepDetail(html);
             if (parsed.run_1 || parsed.skierg || parsed.run_total) {
+              if (!parsed.run_1) parsed.run_1 = '–'; // Missed timing mat at start
               updatesBatch.push({
                 id: a.id,
                 ...parsed,
@@ -477,6 +482,21 @@ async function main() {
             }
           }
           if (matched) break;
+        }
+
+        if (!matched && lastHtml) {
+          // Athlete profile exists on Mika Timing but has zero split times (DNS / DNF)
+          const parsed = parseDeepDetail(lastHtml);
+          updatesBatch.push({
+            id: a.id,
+            run_1: '–',
+            disqual_reason: parsed.disqual_reason || 'DNS',
+            bib_number: parsed.bib_number,
+            nationality: parsed.nationality,
+            age_group: parsed.age_group,
+            team_members: parsed.team_members,
+            station_ranks: '{}',
+          });
         }
       })();
 
