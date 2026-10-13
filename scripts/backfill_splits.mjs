@@ -38,8 +38,10 @@ const client = createClient({
 // CLI Arguments
 const args = process.argv.slice(2);
 function getArg(key, dflt = null) {
+  const eq = args.find(a => a.startsWith(`--${key}=`));
+  if (eq) return eq.slice(key.length + 3);
   const idx = args.indexOf(`--${key}`);
-  if (idx !== -1 && args[idx + 1]) return args[idx + 1];
+  if (idx !== -1 && args[idx + 1] && !args[idx + 1].startsWith('--')) return args[idx + 1];
   return dflt;
 }
 const TARGET_RACE = getArg('race', null);
@@ -157,20 +159,18 @@ export function parseDeepDetail(html) {
     return m ? parseInt(m[1].trim(), 10) : null;
   };
 
-  const getText = (cls) => {
-    const re = new RegExp(`class="[^"]*${cls}[^"]*"[^>]*>([\\s\\S]*?)<\\/td>`, 'i');
-    const m = html.match(re);
+  const getCleanTd = (cls) => {
+    const m = html.match(new RegExp(`<td[^>]*class="[^"]*${cls}[^"]*"[^>]*>([\\s\\S]*?)<\\/td>`, 'i'));
     if (!m) return null;
     const clean = m[1].replace(/<[^>]+>/g, '').replace(/&ndash;/g, '').replace(/[–—]/g, '').trim();
-    if (!clean || clean === '-' || clean.startsWith('*') || clean.toLowerCase().includes('disqual reason')) {
-      return null;
-    }
-    return clean;
+    return clean && clean !== '-' ? clean : null;
   };
 
-  const getBib = () => {
-    const m = html.match(/<td[^>]*class="[^"]*f-start_no_text[^"]*"[^>]*>([0-9]+)<\/td>/i);
-    return m ? m[1].trim() : null;
+  const getNumTd = (cls) => {
+    const v = getCleanTd(cls);
+    if (!v) return null;
+    const n = parseInt(v.replace(/[^0-9]/g, ''), 10);
+    return isNaN(n) ? null : n;
   };
 
   // Station place ranks from chip timing sensors
@@ -204,6 +204,14 @@ export function parseDeepDetail(html) {
     if (name) teamMembers.push({ label, name });
   }
 
+  // Parse nationality (flags or members)
+  const natM = html.match(/class="nation__abbr"[^>]*>([A-Z]{2,3})/i);
+  let nation = natM ? natM[1].toUpperCase() : getCleanTd('f-__nation');
+  if (!nation && teamMembers.length > 0) {
+    const mem1Nat = teamMembers[0].name.match(/\(([A-Z]{2,3})\)/i);
+    if (mem1Nat) nation = mem1Nat[1].toUpperCase();
+  }
+
   // Parse cumulative elapsed times from Table 2 (Race Replay)
   const cumulativeTimes = {};
   const replayRegex = /<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([0-9:]+)<\/td>[\s\S]*?<td[^>]*class="[^"]*last[^"]*"[^>]*>[0-9:]+<\/td>[\s\S]*?<\/tr>/gi;
@@ -216,13 +224,27 @@ export function parseDeepDetail(html) {
     }
   }
 
-  const mwRankText = getText('f-place_all') || getText('f-place_n_m') || getText('f-place_n_w');
-  const agRankText = getText('f-place_age_class');
-  const mwRank = mwRankText && !isNaN(parseInt(mwRankText, 10)) ? parseInt(mwRankText, 10) : null;
-  const agRank = agRankText && !isNaN(parseInt(agRankText, 10)) ? parseInt(agRankText, 10) : null;
+  // Parse athlete start clock time
+  let startTime = null;
+  const split1OfDay = html.match(/<td[^>]*class="[^"]*time_day[^"]*"[^>]*>([0-9:]+)<\/td>/i)?.[1];
+  const run1 = getTime('01');
+  if (split1OfDay && run1) {
+    const [h, m, s] = split1OfDay.split(':').map(Number);
+    const [rh, rm, rs] = (run1.length === 5 ? '00:' + run1 : run1).split(':').map(Number);
+    const totalDaySec = (h * 3600 + m * 60 + s) - (rh * 3600 + rm * 60 + rs);
+    if (totalDaySec >= 0) {
+      const sh = String(Math.floor(totalDaySec / 3600) % 24).padStart(2, '0');
+      const sm = String(Math.floor((totalDaySec % 3600) / 60)).padStart(2, '0');
+      const ss = String(totalDaySec % 60).padStart(2, '0');
+      startTime = `${sh}:${sm}:${ss}`;
+    }
+  }
+
+  const genderRank = getNumTd('f-place_all') ?? getNumTd('f-place_n_m') ?? getNumTd('f-place_n_w');
+  const ageGroupRank = getNumTd('f-place_age') ?? getNumTd('f-place_age_class');
 
   return {
-    run_1: getTime('01'),
+    run_1: run1,
     skierg: getTime('11'),
     run_2: getTime('02'),
     sled_push: getTime('12'),
@@ -241,12 +263,16 @@ export function parseDeepDetail(html) {
     roxzone: getTime('60'),
     run_total: getTime('49'),
     best_run_lap: getTime('50'),
-    penalty_time: getText('f-gimmick_01'),
-    bonus_time: getText('f-gimmick_04'),
-    disqual_reason: getText('f-disqual_reason'),
-    bib_number: getBib(),
-    gender_rank: mwRank,
-    age_group_rank: agRank,
+    penalty_time: getCleanTd('f-gimmick_01'),
+    bonus_time: getCleanTd('f-gimmick_04'),
+    disqual_reason: getCleanTd('f-disqual_reason'),
+    bib_number: getCleanTd('f-start_no_text'),
+    nationality: nation,
+    age_group: getCleanTd('f-_type_age_class'),
+    start_wave: getCleanTd('f-__event'),
+    start_time: startTime,
+    gender_rank: genderRank,
+    age_group_rank: ageGroupRank,
     station_ranks: Object.keys(stationRanks).length > 0 ? JSON.stringify(stationRanks) : null,
     team_members: teamMembers.length > 0 ? JSON.stringify(teamMembers) : null,
     cumulative_times: Object.keys(cumulativeTimes).length > 0 ? JSON.stringify(cumulativeTimes) : null,
@@ -362,7 +388,11 @@ async function main() {
           penalty_time = ${esc(u.penalty_time)},
           bonus_time = ${esc(u.bonus_time)},
           disqual_reason = ${esc(u.disqual_reason)},
-          bib_number = COALESCE(bib_number, ${esc(u.bib_number)}),
+          bib_number = COALESCE(${esc(u.bib_number)}, bib_number),
+          nationality = CASE WHEN nationality IS NULL OR nationality = 'XX' OR nationality = '' THEN COALESCE(${esc(u.nationality)}, nationality) ELSE nationality END,
+          age_group = COALESCE(${esc(u.age_group)}, age_group),
+          start_wave = COALESCE(${esc(u.start_wave)}, start_wave),
+          start_time = COALESCE(${esc(u.start_time)}, start_time),
           gender_rank = COALESCE(${u.gender_rank ?? 'NULL'}, gender_rank),
           age_group_rank = COALESCE(${u.age_group_rank ?? 'NULL'}, age_group_rank),
           station_ranks = ${esc(u.station_ranks)},
