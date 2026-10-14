@@ -55,6 +55,10 @@ const FORCE_RACE = process.argv.find(arg => arg.startsWith('--race='))?.split('=
 const splitsLimitArg = process.argv.find(arg => arg.startsWith('--splits='))?.split('=')[1]
                        || (process.argv.includes('--splits') ? process.argv[process.argv.indexOf('--splits') + 1] : null);
 const DEEP_SPLITS_LIMIT = splitsLimitArg ? (splitsLimitArg === 'all' || splitsLimitArg === 'Infinity' ? Infinity : parseInt(splitsLimitArg, 10)) : Infinity;
+// --until <unix seconds>: after this, only list pages are read; detail pages left over are filled by the backfill.
+const untilArg = process.argv.find(arg => arg.startsWith('--until='))?.split('=')[1]
+                 || (process.argv.includes('--until') ? process.argv[process.argv.indexOf('--until') + 1] : null);
+const DETAIL_DEADLINE = untilArg ? parseInt(untilArg, 10) * 1000 : Infinity;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -912,6 +916,15 @@ async function main() {
 
       let totalRaceAthletes = 0;
 
+      // Athletes whose splits are already stored are not opened again: each pass only fetches
+      // detail pages of new finishers, so a 10,000-athlete race fits into a short pass.
+      const doneIdps = new Set((await runQuery(`
+        SELECT mika_idp FROM hyrox_athlete_results
+        WHERE race_id = ${esc(race.id)} AND mika_idp IS NOT NULL AND mika_idp != ''
+          AND run_1 IS NOT NULL AND run_1 != ''
+      `) || []).map(r => r.mika_idp));
+      console.log(`   ♻️ ${doneIdps.size} athletes of this race already have splits — their detail pages are skipped.`);
+
       for (const opt of activeOptions) {
         const waveText = opt.text;
         const waveVal = opt.val;
@@ -928,16 +941,23 @@ async function main() {
           if (athletes.length > 0) {
             console.log(`\n      ✅ Found ${athletes.length} athletes for [${waveText}] (${sex})`);
 
-            // Fetch deep splits for top finishers (only for active/live races)
-            const splitsToFetch = Math.min(athletes.length, effectiveSplitsLimit);
-            for (let i = 0; i < splitsToFetch; i++) {
-              await scrapeSplits(page, athletes[i]);
-              if ((i + 1) % 10 === 0 || i + 1 === splitsToFetch) {
-                process.stdout.write(`      ⏱️ Deep splits: [${i + 1}/${splitsToFetch}]\r`);
+            // Fetch deep splits for finishers that do not have them yet (only for active/live races)
+            const candidates = athletes.slice(0, effectiveSplitsLimit);
+            const needSplits = candidates.filter(a => !a.mika_idp || !doneIdps.has(a.mika_idp));
+            let fetched = 0;
+            for (const athlete of needSplits) {
+              if (Date.now() >= DETAIL_DEADLINE) break;
+              await scrapeSplits(page, athlete);
+              fetched++;
+              if (athlete.mika_idp && athlete.run_1) doneIdps.add(athlete.mika_idp);
+              if (fetched % 10 === 0 || fetched === needSplits.length) {
+                process.stdout.write(`      ⏱️ Deep splits: [${fetched}/${needSplits.length}] new (${candidates.length - needSplits.length} already done)\r`);
               }
-              await sleep(100);
             }
-            if (splitsToFetch > 0) console.log('');
+            if (needSplits.length > 0) console.log('');
+            if (fetched < needSplits.length) {
+              console.log(`      ⏱️ Pass time budget reached: ${needSplits.length - fetched} detail pages left for the next pass / backfill.`);
+            }
 
             // Upsert batch to Supabase
             await upsertLiveAthletes(athletes);

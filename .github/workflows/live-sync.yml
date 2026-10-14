@@ -30,7 +30,9 @@ jobs:
   live-sync:
     name: ⚡ Scrape Live Weekend Heats
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A race day is one long session (a pass every 10 minutes) instead of one cold start per hour.
+    # Upstash triggers that arrive meanwhile wait in the concurrency queue and take over when it ends.
+    timeout-minutes: 350
 
     steps:
       - name: 📦 Checkout repository
@@ -56,24 +58,42 @@ jobs:
         if: steps.gatekeeper.outputs.active == 'true'
         run: npx playwright install chromium --with-deps
 
-      - name: ⚡ Run Live Sync Engine
+      - name: ⚡ Run Live Sync Engine (race-day session)
         if: steps.gatekeeper.outputs.active == 'true'
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          IN_RACE: ${{ github.event.inputs.race }}
+          IN_SPLITS: ${{ github.event.inputs.splits || 'all' }}
+          IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
-          FLAGS=""
-          if [ -n "${{ github.event.inputs.race }}" ]; then
-            FLAGS="$FLAGS --race=${{ github.event.inputs.race }}"
-          fi
-          if [ -n "${{ github.event.inputs.splits }}" ]; then
-            FLAGS="$FLAGS --splits=${{ github.event.inputs.splits }}"
-          else
-            FLAGS="$FLAGS --splits=all"
-          fi
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            FLAGS="$FLAGS --test"
-          fi
-          node sync_live.mjs $FLAGS
+          # One pass every 10 minutes for up to ~5.5 hours while a race is active. Each pass reads the
+          # list pages and opens detail pages only for new finishers (sync_live.mjs skips athletes that
+          # already have splits); a pass stops opening detail pages at its --until budget.
+          SESSION_END=$(( $(date +%s) + 330 * 60 ))
+          PASS=1
+          while :; do
+            START=$(date +%s)
+            UNTIL=$(( START + 50 * 60 ))
+            [ "$UNTIL" -gt "$SESSION_END" ] && UNTIL=$SESSION_END
+            ARGS=(--splits="$IN_SPLITS" --until "$UNTIL")
+            [ -n "$IN_RACE" ] && ARGS+=(--race="$IN_RACE")
+            [ "$IN_DRY_RUN" = "true" ] && ARGS+=(--test)
+            echo "::group::Pass $PASS ($(date -u +%H:%M) UTC)"
+            node sync_live.mjs "${ARGS[@]}" || echo "⚠️ Pass $PASS failed; the next pass retries."
+            echo "::endgroup::"
+
+            # Manual single-race or dry runs do one pass.
+            if [ -n "$IN_RACE" ] || [ "$IN_DRY_RUN" = "true" ]; then break; fi
+            NEXT=$(( START + 10 * 60 ))
+            if [ "$NEXT" -ge "$SESSION_END" ]; then echo "Session time budget reached."; break; fi
+            # Stop as soon as no race is active any more (end of the race weekend).
+            GATE=$(mktemp)
+            GITHUB_OUTPUT="$GATE" node check_active_today.mjs > /dev/null 2>&1 || true
+            if ! grep -q 'active=true' "$GATE"; then echo "No race active any more — ending the session."; break; fi
+            NOW=$(date +%s)
+            if [ "$NOW" -lt "$NEXT" ]; then sleep $(( NEXT - NOW )); fi
+            PASS=$(( PASS + 1 ))
+          done
