@@ -56,6 +56,17 @@ describe('Polite mika HTTP client', () => {
     assert.ok(logs.some((m) => m.includes('pausing')), 'the pause is logged');
   });
 
+  it('TC64: paced() applies the same pacing and block handling to other request types (Playwright page loads)', async () => {
+    const client = createMikaClient({ rate: 50, maxRate: 50, firstPauseMs: 300, log: () => {} });
+    fw.state.served = 0;
+    fw.state.blockedUntil = 0;
+    const loads = Array.from({ length: 10 }, (_, i) => client.paced(async () => (await fetch(`${fw.base}/page/${i}`)).status));
+    const results = await Promise.all(loads);
+    client.close();
+    assert.ok(results.every((r) => r.status === 200), 'every page load eventually succeeds');
+    assert.ok(client.stats.blocks >= 1, 'the 403 from the fake firewall was handled as a block');
+  });
+
   it('TC53: stops sending once the deadline has passed', async () => {
     const client = createMikaClient({ rate: 5, deadline: Date.now() - 1, log: () => {} });
     const r = await client.get(`${fw.base}/late`);

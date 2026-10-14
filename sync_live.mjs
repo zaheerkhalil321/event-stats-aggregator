@@ -24,8 +24,22 @@
 import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
+import { createMikaClient } from './scripts/lib/mika_http.mjs';
 
 dotenv.config();
+
+// Every mika:timing page load goes through the shared self-tuning pacer (scripts/lib/mika_http.mjs):
+// steady spacing below the firewall limit, and a 403 is waited out instead of failing the page.
+const mika = createMikaClient({ rate: 2, maxRate: 5 });
+
+async function mikaGoto(page, url, options) {
+  let response = null;
+  await mika.paced(async () => {
+    response = await page.goto(url, options);
+    return response?.status() ?? 0;
+  });
+  return response;
+}
 
 const TURSO_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
@@ -168,7 +182,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
   for (let p = 1; p <= maxPages; p++) {
     const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100${sexParam}&page=${p}`;
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await mikaGoto(page, url, { waitUntil: 'domcontentloaded', timeout: 15000 });
       await sleep(1000);
 
       // On Page 1, detect total page count from pagination bar to avoid redundant fetches
@@ -250,7 +264,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
 async function scrapeSplits(page, athlete) {
   if (!athlete.detail_url) return;
   try {
-    await page.goto(athlete.detail_url, { waitUntil: 'domcontentloaded', timeout: 12000 });
+    await mikaGoto(page, athlete.detail_url, { waitUntil: 'domcontentloaded', timeout: 12000 });
     await page.waitForSelector('table tr, .table tr', { timeout: 3000 }).catch(() => {});
 
     const tableData = await page.evaluate(() => {
@@ -803,7 +817,7 @@ async function main() {
 
     const seasonSlug = 'season-9';
     const listUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
-    await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await mikaGoto(page, listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForSelector('select[name="event"]', { timeout: 10000 });
 
     const allOptgroups = await page.evaluate(() => {
@@ -879,7 +893,7 @@ async function main() {
       let hasResults = false;
       try {
         const probeUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${probeOpt.val}&pid=list&num_results=1`;
-        await page.goto(probeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        await mikaGoto(page, probeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
         hasResults = await page.evaluate(() => 
           document.querySelectorAll('li.list-group-item a[href*="content=detail"]').length > 0
         );

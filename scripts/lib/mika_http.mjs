@@ -154,8 +154,39 @@ export function createMikaClient({
     }
   }
 
+  /**
+   * Pace any other kind of request (e.g. a Playwright page.goto). `task` performs one attempt and
+   * resolves to its HTTP status; on 403/429 it is waited out and run again. Errors are re-thrown.
+   */
+  async function paced(task) {
+    for (;;) {
+      if (!(await acquire())) return { status: 0, stopped: true };
+      stats.requests++;
+      windowRequests++;
+      let status;
+      try {
+        status = await task();
+      } catch (err) {
+        stats.errors++;
+        if (probeInFlight) probeInFlight = false;
+        throw err;
+      }
+      if (status === 403 || status === 429) {
+        onBlocked(status);
+        continue;
+      }
+      if (status >= 200 && status < 400) onSuccess();
+      else {
+        stats.errors++;
+        settleProbe(true);
+      }
+      return { status };
+    }
+  }
+
   return {
     get,
+    paced,
     stats,
     pastDeadline,
     get rate() { return currentRate; },
