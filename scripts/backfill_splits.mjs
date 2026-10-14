@@ -11,15 +11,23 @@
  *  - Team Members for Doubles & Relays (Member 1, Member 2, etc.)
  *  - Cumulative Checkpoint Elapsed Times (Race Replay)
  * 
+ * All mika:timing requests go through the self-tuning rate limiter in lib/mika_http.mjs: it keeps
+ * a steady pace just below the site's firewall limit and waits out a 403 instead of aborting.
+ * Athletes need a mika_idp (see discover_idps.mjs); when mika_event is known, one request per athlete.
+ *
  * Usage:
  *   node scripts/backfill_splits.mjs --race bordeaux-2026 --division "HYROX PRO WOMEN"
  *   node scripts/backfill_splits.mjs --race bordeaux-2026
  *   node scripts/backfill_splits.mjs --season 2026
+ *   node scripts/backfill_splits.mjs --seasons 2026,2025,2024,all --forever --until <unix time> --exit-when-idle
  *   node scripts/backfill_splits.mjs --test
  */
 
+import fs from 'fs';
 import { createClient } from '@libsql/client';
 import dotenv from 'dotenv';
+import { createMikaClient } from './lib/mika_http.mjs';
+import { updateSql } from './lib/athlete_update_sql.mjs';
 dotenv.config();
 
 const TURSO_URL = process.env.TURSO_DATABASE_URL;
@@ -49,9 +57,18 @@ const TARGET_DIV = getArg('division', null);
 const TARGET_SEASON = getArg('season', null);
 const LIMIT = getArg('limit', null) ? parseInt(getArg('limit'), 10) : null;
 const IS_TEST = args.includes('--test');
-const CONCURRENCY = getArg('concurrency', '10') ? parseInt(getArg('concurrency', '10'), 10) : 10;
+// Workers in flight; the actual request rate is set by the limiter, not by this number.
+const CONCURRENCY = getArg('concurrency', '8') ? parseInt(getArg('concurrency', '8'), 10) : 8;
+const SEASONS = (getArg('seasons') || TARGET_SEASON || 'all').split(',').map((s) => s.trim()).filter(Boolean);
+const FOREVER = args.includes('--forever');
+const EXIT_WHEN_IDLE = args.includes('--exit-when-idle');
+const DEADLINE = getArg('until') ? parseInt(getArg('until'), 10) * 1000 : Infinity;
 
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const mika = createMikaClient({
+  rate: parseFloat(getArg('rate', '2')),
+  maxRate: parseFloat(getArg('max-rate', '6')),
+  deadline: DEADLINE,
+});
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,10 +91,13 @@ async function getOptgroupsForSeason(seasonSlug) {
 
   const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-    });
-    const html = await res.text();
+    const res = await mika.get(url);
+    if (res.status !== 200) {
+      // Not cached: an empty wave list would make every athlete of the season look like a DNS.
+      console.warn(`⚠️ Could not fetch optgroups for ${seasonSlug}: HTTP ${res.status}`);
+      return [];
+    }
+    const html = res.text;
 
     const optgroups = [];
     const ogRegex = /<optgroup[^>]*label="([^"]*)"[^>]*>([\s\S]*?)<\/optgroup>/gi;
@@ -279,56 +299,10 @@ export function parseDeepDetail(html) {
   };
 }
 
-// Circuit breaker state: detects IP blocks / throttling instead of failing silently
-let consecutiveFailures = 0;
-let cooldownUntil = 0;
-let cooldownCount = 0;
-const failureStats = {};
-const MAX_COOLDOWNS = 5;
-
-function recordFailure(reason) {
-  failureStats[reason] = (failureStats[reason] || 0) + 1;
-  consecutiveFailures++;
-  if (failureStats[reason] <= 3) console.warn(`\n⚠️ Fetch failure: ${reason}`);
-  if (consecutiveFailures >= 40 && Date.now() > cooldownUntil) {
-    cooldownCount++;
-    if (cooldownCount > MAX_COOLDOWNS) {
-      console.error(`\n🛑 Mika Timing keeps failing (${JSON.stringify(failureStats)}). IP is likely blocked/throttled. Aborting — re-run from another IP (local/VPS). Already-saved progress is kept.`);
-      process.exit(2);
-    }
-    cooldownUntil = Date.now() + 60_000 * cooldownCount;
-    console.warn(`\n⏸️ ${consecutiveFailures} consecutive failures ${JSON.stringify(failureStats)} — cooling down ${cooldownCount} min (${cooldownCount}/${MAX_COOLDOWNS})...`);
-    consecutiveFailures = 0;
-  }
-}
-
-async function fetchDetailHtml(url, maxRetries = 2) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const wait = cooldownUntil - Date.now();
-    if (wait > 0) await sleep(wait);
-    try {
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(10000),
-        headers: {
-          'User-Agent': USER_AGENT,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
-      });
-      if (res.status === 200) {
-        consecutiveFailures = 0;
-        return await res.text();
-      }
-      recordFailure(`HTTP ${res.status}`);
-      if (res.status === 403 || res.status === 429) {
-        await sleep(1000 * (attempt + 1));
-      }
-    } catch (err) {
-      recordFailure(err.name || 'network-error');
-      await sleep(150 * (attempt + 1));
-    }
-  }
-  return null;
+// Blocks (403/429) are waited out and retried inside the limiter, so null means "no usable page".
+async function fetchDetailHtml(url) {
+  const res = await mika.get(url, { timeoutMs: 15000 });
+  return res.status === 200 ? res.text : null;
 }
 
 function getSeasonSlug(raceId, raceSeason) {
@@ -351,237 +325,228 @@ async function main() {
   console.log('=============================================================');
   console.log(`Target Race:     ${TARGET_RACE || 'ALL'}`);
   console.log(`Target Division: ${TARGET_DIV || 'ALL'}`);
-  console.log(`Target Season:   ${TARGET_SEASON || 'ALL'}`);
+  console.log(`Seasons:         ${SEASONS.join(' → ')}`);
   console.log(`Dry Run:         ${IS_TEST ? 'YES' : 'NO'}`);
-  console.log(`Concurrency:     ${CONCURRENCY}`);
+  console.log(`Workers:         ${CONCURRENCY} (pace set by the rate limiter, starting at ${mika.rate} req/s)`);
+  if (FOREVER) console.log(`Mode:            run until nothing is pending${EXIT_WHEN_IDLE ? ', then exit' : ', then keep checking'}`);
+  if (DEADLINE !== Infinity) console.log(`Stops at:        ${new Date(DEADLINE).toISOString()}`);
   if (LIMIT) console.log(`Limit:           ${LIMIT}`);
   console.log('-------------------------------------------------------------\n');
 
-  let passNumber = 1;
-  let totalEnrichedAll = 0;
-  let totalProcessedAll = 0;
-  let lastMaxId = 0;
+  const columns = (await client.execute('PRAGMA table_info(hyrox_athlete_results)')).rows.map((r) => r.name);
+  const hasMikaEvent = columns.includes('mika_event');
+  const hasDiscoveryLog = (await client.execute(`SELECT name FROM sqlite_master WHERE type='table' AND name='mika_discovery_log'`)).rows.length > 0;
 
-  while (true) {
-    let query = `
-      SELECT 
-        a.id, a.race_id, a.full_name, a.division, a.mika_idp,
-        r.season, r.city, r.date, r.name as race_name
-      FROM hyrox_athlete_results a
-      JOIN hyrox_races r ON a.race_id = r.id
-      WHERE a.id > ${lastMaxId} AND (a.run_1 IS NULL OR a.run_1 = '') AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
-    `;
+  let totalProcessed = 0;
+  let totalEnriched = 0;
+  let totalWritten = 0;
+  let idle = false;
 
-    if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
-    if (TARGET_DIV) query += ` AND a.division = ${esc(TARGET_DIV)}`;
-    if (TARGET_SEASON) {
-      if (TARGET_SEASON === '2026') {
-        query += ` AND (r.season = '2026' OR r.season = '25/26' OR r.season = '26/27' OR r.season = 'season-9' OR r.date LIKE '2026%' OR a.race_id LIKE '%2026%')`;
-      } else if (TARGET_SEASON === '2025') {
-        query += ` AND (r.season = '2025' OR r.season = '24/25' OR r.season = 'season-8' OR r.date LIKE '2025%' OR a.race_id LIKE '%2025%')`;
-      } else if (TARGET_SEASON === '2024') {
-        query += ` AND (r.season = '2024' OR r.season = '23/24' OR r.season = 'season-7' OR r.date LIKE '2024%' OR a.race_id LIKE '%2024%')`;
-      } else {
-        query += ` AND (r.season = ${esc(TARGET_SEASON)} OR r.date LIKE '${TARGET_SEASON}%' OR a.race_id LIKE '%${TARGET_SEASON}%')`;
-      }
-    }
-
-    query += ` ORDER BY a.id ASC`;
-    query += ` LIMIT ${LIMIT || 3000}`;
-
-    console.log(`\n🔍 [Pass ${passNumber}] Querying batch of pending athletes from Turso (cursor a.id > ${lastMaxId})...`);
-    const res = await client.execute(query);
-    const athletes = res.rows;
-
-    if (athletes.length === 0) {
-      console.log(`\n🎉 100% COMPLETE! All target events & athletes have deep splits. Zero pending records!`);
-      break;
-    }
-
-    lastMaxId = athletes[athletes.length - 1].id;
-    console.log(`📊 Found ${athletes.length.toLocaleString()} athletes in current pass (ID range ${athletes[0].id} -> ${lastMaxId}).\n`);
-
-    let processedCount = 0;
-    let successCount = 0;
-    const updatesBatch = [];
-
-    async function flushBatch() {
-      if (updatesBatch.length === 0 || IS_TEST) return;
-      const statements = updatesBatch.map((u) => ({
-        sql: `
-          UPDATE hyrox_athlete_results
-          SET 
-            run_1 = ${esc(u.run_1)},
-            skierg = ${esc(u.skierg)},
-            run_2 = ${esc(u.run_2)},
-            sled_push = ${esc(u.sled_push)},
-            run_3 = ${esc(u.run_3)},
-            sled_pull = ${esc(u.sled_pull)},
-            run_4 = ${esc(u.run_4)},
-            burpee_jumps = ${esc(u.burpee_jumps)},
-            run_5 = ${esc(u.run_5)},
-            rowing = ${esc(u.rowing)},
-            run_6 = ${esc(u.run_6)},
-            farmers_carry = ${esc(u.farmers_carry)},
-            run_7 = ${esc(u.run_7)},
-            sandbag_lunges = ${esc(u.sandbag_lunges)},
-            run_8 = ${esc(u.run_8)},
-            wall_balls = ${esc(u.wall_balls)},
-            roxzone = ${esc(u.roxzone)},
-            run_total = ${esc(u.run_total)},
-            best_run_lap = ${esc(u.best_run_lap)},
-            penalty_time = ${esc(u.penalty_time)},
-            bonus_time = ${esc(u.bonus_time)},
-            disqual_reason = ${esc(u.disqual_reason)},
-            bib_number = COALESCE(${esc(u.bib_number)}, bib_number),
-            nationality = CASE WHEN nationality IS NULL OR nationality = 'XX' OR nationality = '' THEN COALESCE(${esc(u.nationality)}, nationality) ELSE nationality END,
-            age_group = COALESCE(${esc(u.age_group)}, age_group),
-            start_wave = COALESCE(${esc(u.start_wave)}, start_wave),
-            start_time = COALESCE(${esc(u.start_time)}, start_time),
-            gender_rank = COALESCE(${u.gender_rank ?? 'NULL'}, gender_rank),
-            age_group_rank = COALESCE(${u.age_group_rank ?? 'NULL'}, age_group_rank),
-            station_ranks = ${esc(u.station_ranks)},
-            team_members = COALESCE(${esc(u.team_members)}, team_members),
-            cumulative_times = ${esc(u.cumulative_times)},
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ${u.id};
-        `,
-      }));
-
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          await client.batch(statements, 'write');
+  sweeps:
+  for (let sweep = 1; ; sweep++) {
+    let sweepWritten = 0;
+    for (const season of SEASONS) {
+      let lastMaxId = 0;
+      for (let pass = 1; ; pass++) {
+        if (mika.pastDeadline()) break sweeps;
+        console.log(`\n🔍 [Sweep ${sweep} · season ${season} · pass ${pass}] Querying pending athletes (cursor a.id > ${lastMaxId})...`);
+        const athletes = await fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog);
+        if (athletes.length === 0) {
+          console.log(`   ✅ Nothing pending for season ${season}.`);
           break;
-        } catch (err) {
-          console.warn(`⚠️ [Flush] Turso batch write attempt ${attempt} failed:`, err.message);
-          if (attempt === 3) throw err;
-          await sleep(1000 * attempt);
         }
-      }
-      updatesBatch.length = 0;
-    }
+        lastMaxId = athletes[athletes.length - 1].id;
+        console.log(`📊 Found ${athletes.length.toLocaleString()} athletes (ID range ${athletes[0].id} -> ${lastMaxId}).\n`);
 
-    // Cache wave candidate values by race+division key
-    const waveCache = new Map();
-    const lastSuccessfulWave = new Map();
+        const r = await processBatch(athletes);
+        totalProcessed += r.processed;
+        totalEnriched += r.enriched;
+        totalWritten += r.written;
+        sweepWritten += r.written;
+        console.log(`\n🎉 Pass complete: processed ${r.processed.toLocaleString()} | enriched ${r.enriched.toLocaleString()} | written ${r.written.toLocaleString()}`);
+        console.log(`   Cumulative Enriched So Far: ${totalEnriched.toLocaleString()}`);
 
-    async function getWaves(city, division, sSlug) {
-      const key = `${sSlug}:::${city}:::${division}`;
-      if (!waveCache.has(key)) {
-        const optgroups = await getOptgroupsForSeason(sSlug);
-        waveCache.set(key, findWaveCandidates(optgroups, city, division));
-      }
-      const rawWaves = waveCache.get(key) || [];
-      const lastWave = lastSuccessfulWave.get(key);
-      if (lastWave && rawWaves.includes(lastWave)) {
-        return [lastWave, ...rawWaves.filter((w) => w !== lastWave)];
-      }
-      return rawWaves;
-    }
-
-    const pool = [];
-    for (let i = 0; i < athletes.length; i++) {
-      const a = athletes[i];
-      const sSlug = getSeasonSlug(String(a.race_id), String(a.season));
-      const cityOrName = String(a.city || a.race_name);
-      const divStr = String(a.division);
-      const cacheKey = `${sSlug}:::${cityOrName}:::${divStr}`;
-      const waves = await getWaves(cityOrName, divStr, sSlug);
-
-      const task = (async () => {
-        // Form candidate IDPs and waves (handle _BOD or _OVERALL suffixes for doubles)
-        const idpCandidates = [a.mika_idp];
-        if (a.division.includes('DOUBLES') || a.division.includes('RELAY')) {
-          const cityPrefix = String(a.city || '').slice(0, 3).toUpperCase();
-          if (cityPrefix) idpCandidates.push(`${a.mika_idp}_${cityPrefix}`);
-        }
-
-        let matched = false;
-        let lastHtml = null;
-        for (const curIdp of idpCandidates) {
-          for (const wVal of (waves.length > 0 ? waves : [''])) {
-            const eventParam = wVal ? `&event=${wVal}` : '';
-            const detailUrl = `https://hyrox.r.mikatiming.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
-            const html = await fetchDetailHtml(detailUrl);
-            if (!html) continue;
-            lastHtml = html;
-
-            const parsed = parseDeepDetail(html);
-            if (parsed.run_1 || parsed.skierg || parsed.run_total) {
-              if (!parsed.run_1) parsed.run_1 = '–'; // Missed timing mat at start
-              updatesBatch.push({
-                id: a.id,
-                ...parsed,
-              });
-              successCount++;
-              matched = true;
-              if (wVal) {
-                lastSuccessfulWave.set(cacheKey, wVal);
-              }
-              break;
-            }
-          }
-          if (matched) break;
-        }
-
-        if (!matched && lastHtml) {
-          // Athlete profile exists on Mika Timing but has zero split times (DNS / DNF)
-          const parsed = parseDeepDetail(lastHtml);
-          updatesBatch.push({
-            id: a.id,
-            run_1: '–',
-            disqual_reason: parsed.disqual_reason || 'DNS',
-            bib_number: parsed.bib_number,
-            nationality: parsed.nationality,
-            age_group: parsed.age_group,
-            team_members: parsed.team_members,
-            station_ranks: '{}',
-          });
-        }
-      })();
-
-      pool.push(task);
-
-      if (pool.length >= CONCURRENCY || i === athletes.length - 1) {
-        await Promise.all(pool);
-        pool.length = 0;
-        processedCount = i + 1;
-
-        if (updatesBatch.length >= 100 || i === athletes.length - 1) {
-          await flushBatch();
-        }
-
-        const progressMsg = `⚡ Processed: ${processedCount.toLocaleString()} / ${athletes.length.toLocaleString()} | Updated: ${successCount.toLocaleString()}`;
-        if (processedCount % 50 === 0 || i === athletes.length - 1) {
-          console.log(`[${new Date().toISOString().slice(11, 19)}] ${progressMsg}`);
-        } else {
-          process.stdout.write(`${progressMsg}\r`);
-        }
-        await sleep(100);
+        if (LIMIT || IS_TEST) break sweeps;
       }
     }
-
-    if (updatesBatch.length > 0) {
-      await flushBatch();
+    if (!FOREVER) break;
+    if (sweepWritten === 0) {
+      if (EXIT_WHEN_IDLE) { idle = true; break; }
+      console.log('\n😴 Nothing left to fetch — checking again in 15 minutes.');
+      await sleep(Math.min(15 * 60_000, Math.max(0, DEADLINE - Date.now())));
+      if (mika.pastDeadline()) break;
     }
-
-    totalEnrichedAll += successCount;
-    totalProcessedAll += processedCount;
-
-    console.log(`\n🎉 Pass ${passNumber} Complete!`);
-    console.log(`   Processed in Pass: ${processedCount.toLocaleString()} | Enriched: ${successCount.toLocaleString()}`);
-    console.log(`   Cumulative Enriched So Far: ${totalEnrichedAll.toLocaleString()}`);
-
-    if (LIMIT || IS_TEST) {
-      break;
-    }
-
-    passNumber++;
   }
 
-  console.log(`\n\n🏁 Backfill Engine Finished!`);
-  console.log(`   Grand Total Processed: ${totalProcessedAll.toLocaleString()}`);
-  console.log(`   Grand Total Enriched:  ${totalEnrichedAll.toLocaleString()}`);
+  mika.close();
+  const moreWork = FOREVER && !idle && mika.pastDeadline();
+  console.log(`\n\n🏁 Backfill Engine Finished${mika.pastDeadline() ? ' (time budget reached)' : ''}!`);
+  console.log(`   Grand Total Processed: ${totalProcessed.toLocaleString()}`);
+  console.log(`   Grand Total Enriched:  ${totalEnriched.toLocaleString()}`);
+  console.log(`   Rows Written:          ${totalWritten.toLocaleString()}`);
+  console.log(`   mika requests ok ${mika.stats.ok}, blocks ${mika.stats.blocks}, errors ${mika.stats.errors} | final rate ${mika.rate} req/s (limit ${mika.limitRate})`);
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `more_work=${moreWork}\n`);
+}
+
+function seasonFilter(season) {
+  if (!season || season === 'all') return '';
+  if (season === '2026') return ` AND (r.season = '2026' OR r.season = '25/26' OR r.season = '26/27' OR r.season = 'season-9' OR r.date LIKE '2026%' OR a.race_id LIKE '%2026%')`;
+  if (season === '2025') return ` AND (r.season = '2025' OR r.season = '24/25' OR r.season = 'season-8' OR r.date LIKE '2025%' OR a.race_id LIKE '%2025%')`;
+  if (season === '2024') return ` AND (r.season = '2024' OR r.season = '23/24' OR r.season = 'season-7' OR r.date LIKE '2024%' OR a.race_id LIKE '%2024%')`;
+  return ` AND (r.season = ${esc(season)} OR r.date LIKE ${esc(`${season}%`)} OR a.race_id LIKE ${esc(`%${season}%`)})`;
+}
+
+// Pending = has a mika_idp, and either no splits yet or never got station ranks / replay data.
+async function fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog) {
+  let query = `
+    SELECT
+      a.id, a.race_id, a.full_name, a.division, a.mika_idp${hasMikaEvent ? ', a.mika_event' : ''},
+      r.season, r.city, r.date, r.name as race_name${hasDiscoveryLog ? ', d.season_slug AS mika_slug' : ''}
+    FROM hyrox_athlete_results a
+    JOIN hyrox_races r ON a.race_id = r.id
+    ${hasDiscoveryLog ? 'LEFT JOIN mika_discovery_log d ON d.race_id = a.race_id' : ''}
+    WHERE a.id > ${lastMaxId}
+      AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
+      AND (a.run_1 IS NULL OR a.run_1 = '' OR a.station_ranks IS NULL)
+  `;
+  if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
+  if (TARGET_DIV) query += ` AND a.division = ${esc(TARGET_DIV)}`;
+  query += seasonFilter(season);
+  query += ` ORDER BY a.id ASC LIMIT ${LIMIT || 3000}`;
+  return (await client.execute(query)).rows;
+}
+
+// Wave candidates per race+division, plus the wave that last worked so it is tried first.
+const waveCache = new Map();
+const lastSuccessfulWave = new Map();
+
+async function getWaves(city, division, sSlug) {
+  const key = `${sSlug}:::${city}:::${division}`;
+  if (!waveCache.has(key)) {
+    const optgroups = await getOptgroupsForSeason(sSlug);
+    if (optgroups.length === 0) return [];
+    waveCache.set(key, findWaveCandidates(optgroups, city, division));
+  }
+  const rawWaves = waveCache.get(key) || [];
+  const lastWave = lastSuccessfulWave.get(key);
+  if (lastWave && rawWaves.includes(lastWave)) {
+    return [lastWave, ...rawWaves.filter((w) => w !== lastWave)];
+  }
+  return rawWaves;
+}
+
+async function enrichAthlete(a) {
+  const sSlug = a.mika_slug ? String(a.mika_slug) : getSeasonSlug(String(a.race_id), String(a.season));
+  const cityOrName = String(a.city || a.race_name);
+  const divStr = String(a.division);
+  const cacheKey = `${sSlug}:::${cityOrName}:::${divStr}`;
+  const knownEvent = a.mika_event ? String(a.mika_event) : null;
+
+  // The discovery step stores the exact wave, so one request is enough; otherwise guess the wave.
+  const waves = knownEvent ? [knownEvent] : await getWaves(cityOrName, divStr, sSlug);
+  if (!knownEvent && waves.length === 0 && mika.pastDeadline()) return null;
+
+  // Form candidate IDPs (handle _BOD or _OVERALL suffixes for doubles)
+  const idpCandidates = [String(a.mika_idp)];
+  if (!knownEvent && (divStr.includes('DOUBLES') || divStr.includes('RELAY'))) {
+    const cityPrefix = String(a.city || '').slice(0, 3).toUpperCase();
+    if (cityPrefix) idpCandidates.push(`${a.mika_idp}_${cityPrefix}`);
+  }
+
+  let lastHtml = null;
+  for (const curIdp of idpCandidates) {
+    for (const wVal of (waves.length > 0 ? waves : [''])) {
+      if (mika.pastDeadline()) return null;
+      const eventParam = wVal ? `&event=${wVal}` : '';
+      const detailUrl = `https://hyrox.r.mikatiming.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
+      const html = await fetchDetailHtml(detailUrl);
+      if (!html) continue;
+      lastHtml = html;
+
+      const parsed = parseDeepDetail(html);
+      if (parsed.run_1 || parsed.skierg || parsed.run_total) {
+        if (!parsed.run_1) parsed.run_1 = '–'; // Missed timing mat at start
+        if (wVal && !knownEvent) lastSuccessfulWave.set(cacheKey, wVal);
+        return { id: a.id, ...parsed, enriched: true };
+      }
+    }
+  }
+
+  if (lastHtml) {
+    // Athlete profile exists on Mika Timing but has zero split times (DNS / DNF)
+    const parsed = parseDeepDetail(lastHtml);
+    return {
+      id: a.id,
+      dns: true,
+      disqual_reason: parsed.disqual_reason || 'DNS',
+      bib_number: parsed.bib_number,
+      nationality: parsed.nationality,
+      age_group: parsed.age_group,
+      team_members: parsed.team_members,
+    };
+  }
+  return null;
+}
+
+async function writeUpdates(items) {
+  if (IS_TEST) {
+    if (items.length) console.log(`   [dry run] would write ${items.length} rows, e.g. ${JSON.stringify(items[0]).slice(0, 300)}`);
+    return;
+  }
+  const statements = items.map((u) => ({ sql: updateSql(u) }));
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await client.batch(statements, 'write');
+      return;
+    } catch (err) {
+      console.warn(`⚠️ [Flush] DB batch write attempt ${attempt} failed:`, err.message);
+      if (attempt === 3) throw err;
+      await sleep(1000 * attempt);
+    }
+  }
+}
+
+// Workers pull athletes from a shared queue; writes are batched and serialised.
+async function processBatch(athletes) {
+  let next = 0;
+  let processed = 0;
+  let enriched = 0;
+  let written = 0;
+  let writeError = null;
+  const pendingWrites = [];
+  let writeChain = Promise.resolve();
+
+  const flush = () => {
+    const items = pendingWrites.splice(0);
+    if (items.length) {
+      writeChain = writeChain
+        .then(() => writeUpdates(items))
+        .then(() => { written += IS_TEST ? 0 : items.length; })
+        .catch((err) => { writeError = err; });
+    }
+    return writeChain;
+  };
+
+  const worker = async () => {
+    while (next < athletes.length && !mika.pastDeadline() && !writeError) {
+      const a = athletes[next++];
+      const u = await enrichAthlete(a);
+      processed++;
+      if (u) {
+        pendingWrites.push(u);
+        if (u.enriched) enriched++;
+      }
+      if (pendingWrites.length >= 100) flush();
+      if (processed % 100 === 0 || processed === athletes.length) {
+        console.log(`[${new Date().toISOString().slice(11, 19)}] ⚡ Processed: ${processed.toLocaleString()} / ${athletes.length.toLocaleString()} | Enriched: ${enriched.toLocaleString()}`);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, athletes.length) }, worker));
+  await flush();
+  if (writeError) throw writeError;
+  return { processed, enriched, written };
 }
 
 if (process.argv[1] && process.argv[1].endsWith('backfill_splits.mjs')) {

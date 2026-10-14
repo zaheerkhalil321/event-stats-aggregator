@@ -1,43 +1,78 @@
 name: ⚡ Deep Splits & Chip Ranks Backfill
 
+# One steady run of up to ~5h40m instead of short bursts: both scripts pace themselves just below
+# mika:timing's firewall limit (scripts/lib/mika_http.mjs) and wait out a 403 instead of aborting.
+# When the time budget runs out with work left, the job dispatches the next run itself, so no
+# watcher is needed. The schedule only restarts the chain if it ever breaks (e.g. after a crash)
+# and picks up athletes of newly imported races.
+
 on:
   workflow_dispatch:
     inputs:
       race:
-        description: 'Target specific race slug (e.g. bordeaux-2026, stockholm-2025, or leave blank for all in season)'
+        description: 'Target specific race slug (e.g. bordeaux-2026), or leave blank for all races'
         required: false
         default: ''
         type: string
       division:
-        description: 'Target specific division (e.g. "HYROX PRO WOMEN", or leave blank for all divisions)'
+        description: 'Target specific division (e.g. "HYROX PRO WOMEN"), or leave blank for all divisions'
         required: false
         default: ''
         type: string
       season:
-        description: 'Season / Year filter (e.g. 2026, 2025, 2024)'
+        description: 'Season to fill (all = 2026, then 2025, then 2024, then everything else)'
         required: false
-        default: '2026'
+        default: 'all'
         type: choice
         options:
+          - 'all'
           - '2026'
           - '2025'
           - '2024'
-          - 'all'
-      concurrency:
-        description: 'Concurrent HTTP fetch threads (10 is optimal safe speed)'
+      minutes:
+        description: 'Time budget in minutes (max 335)'
         required: false
-        default: '10'
+        default: '335'
         type: string
+      max_rate:
+        description: 'Upper bound in requests/second (the limiter finds the real limit by itself)'
+        required: false
+        default: '6'
+        type: string
+      skip_discovery:
+        description: 'Skip the mika ID discovery step'
+        required: false
+        default: false
+        type: boolean
+      chain:
+        description: 'Start the next run automatically when work is left'
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    - cron: '23 */6 * * *'
 
 concurrency:
   group: deep-splits-backfill
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write # lets the job dispatch its own next run
+
 jobs:
   backfill:
-    name: ⚡ Backfill Splits (${{ github.event.inputs.race || github.event.inputs.season }})
+    name: ⚡ Backfill Splits (${{ inputs.race || inputs.season || 'all' }})
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 355
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      IN_RACE: ${{ inputs.race }}
+      IN_DIVISION: ${{ inputs.division }}
+      IN_SEASON: ${{ inputs.season || 'all' }}
+      IN_MINUTES: ${{ inputs.minutes || '335' }}
+      IN_MAX_RATE: ${{ inputs.max_rate || '6' }}
 
     steps:
       - name: 📦 Checkout repository
@@ -49,24 +84,44 @@ jobs:
           node-version: '22'
 
       - name: 📥 Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: 🚀 Run High-Speed Splits Backfill Ingestor
-        env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      - name: ⏱️ Set time budget
         run: |
-          FLAGS="--concurrency ${{ github.event.inputs.concurrency || '20' }}"
+          MINUTES=$(( IN_MINUTES > 335 ? 335 : IN_MINUTES ))
+          echo "DEADLINE=$(( $(date +%s) + MINUTES * 60 ))" >> "$GITHUB_ENV"
 
-          if [ -n "${{ github.event.inputs.race }}" ]; then
-            FLAGS="$FLAGS --race ${{ github.event.inputs.race }}"
-          elif [ "${{ github.event.inputs.season }}" != "all" ] && [ -n "${{ github.event.inputs.season }}" ]; then
-            FLAGS="$FLAGS --season ${{ github.event.inputs.season }}"
-          fi
+      - name: 🔎 Discover missing mika IDs
+        id: discover
+        if: ${{ !inputs.skip_discovery }}
+        run: |
+          # Discovery gets at most 150 minutes; the rest of the budget goes to the splits.
+          UNTIL=$(( $(date +%s) + 150 * 60 ))
+          [ "$UNTIL" -gt "$DEADLINE" ] && UNTIL=$DEADLINE
+          ARGS=(--until "$UNTIL" --max-rate "$IN_MAX_RATE")
+          [ -n "$IN_RACE" ] && ARGS+=(--race "$IN_RACE")
+          node scripts/discover_idps.mjs "${ARGS[@]}"
 
-          if [ -n "${{ github.event.inputs.division }}" ]; then
-            FLAGS="$FLAGS --division \"${{ github.event.inputs.division }}\""
-          fi
+      - name: 🚀 Fill splits, station ranks & race replay
+        id: splits
+        if: ${{ !cancelled() }}
+        run: |
+          case "$IN_SEASON" in
+            all) SEASONS="2026,2025,2024,all" ;;
+            *) SEASONS="$IN_SEASON" ;;
+          esac
+          ARGS=(--seasons "$SEASONS" --forever --exit-when-idle --until "$DEADLINE" --max-rate "$IN_MAX_RATE")
+          [ -n "$IN_RACE" ] && ARGS+=(--race "$IN_RACE")
+          [ -n "$IN_DIVISION" ] && ARGS+=(--division "$IN_DIVISION")
+          node scripts/backfill_splits.mjs "${ARGS[@]}"
 
-          echo "Executing: node scripts/backfill_splits.mjs $FLAGS"
-          node scripts/backfill_splits.mjs $FLAGS
+      - name: 🔁 Start the next run
+        if: ${{ !cancelled() && inputs.chain != false && (steps.splits.outputs.more_work == 'true' || steps.discover.outputs.more_work == 'true') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARGS=(-f season="$IN_SEASON" -f max_rate="$IN_MAX_RATE")
+          [ -n "$IN_RACE" ] && ARGS+=(-f race="$IN_RACE")
+          [ -n "$IN_DIVISION" ] && ARGS+=(-f division="$IN_DIVISION")
+          gh workflow run backfill-splits.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" "${ARGS[@]}"
+          echo "Next run dispatched."
