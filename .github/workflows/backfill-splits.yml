@@ -49,6 +49,11 @@ on:
         required: false
         default: true
         type: boolean
+      max_db_mb:
+        description: 'Stop filling splits once the database reaches this size in MB (protects the VPS disk)'
+        required: false
+        default: '1400'
+        type: string
   schedule:
     - cron: '23 */6 * * *'
 
@@ -73,6 +78,7 @@ jobs:
       IN_SEASON: ${{ inputs.season || 'all' }}
       IN_MINUTES: ${{ inputs.minutes || '335' }}
       IN_MAX_RATE: ${{ inputs.max_rate || '6' }}
+      IN_MAX_DB_MB: ${{ inputs.max_db_mb || '1400' }}
 
     steps:
       - name: 📦 Checkout repository
@@ -110,7 +116,7 @@ jobs:
             all) SEASONS="2026,2025,2024,all" ;;
             *) SEASONS="$IN_SEASON" ;;
           esac
-          ARGS=(--seasons "$SEASONS" --forever --exit-when-idle --until "$DEADLINE" --max-rate "$IN_MAX_RATE")
+          ARGS=(--seasons "$SEASONS" --forever --exit-when-idle --until "$DEADLINE" --max-rate "$IN_MAX_RATE" --max-db-mb "$IN_MAX_DB_MB")
           [ -n "$IN_RACE" ] && ARGS+=(--race "$IN_RACE")
           [ -n "$IN_DIVISION" ] && ARGS+=(--division "$IN_DIVISION")
           node scripts/backfill_splits.mjs "${ARGS[@]}"
@@ -120,7 +126,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ARGS=(-f season="$IN_SEASON" -f max_rate="$IN_MAX_RATE")
+          ARGS=(-f season="$IN_SEASON" -f max_rate="$IN_MAX_RATE" -f max_db_mb="$IN_MAX_DB_MB")
           [ -n "$IN_RACE" ] && ARGS+=(-f race="$IN_RACE")
           [ -n "$IN_DIVISION" ] && ARGS+=(-f division="$IN_DIVISION")
           gh workflow run backfill-splits.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" "${ARGS[@]}"

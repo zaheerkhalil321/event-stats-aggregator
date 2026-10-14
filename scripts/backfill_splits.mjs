@@ -63,6 +63,8 @@ const SEASONS = (getArg('seasons') || TARGET_SEASON || 'all').split(',').map((s)
 const FOREVER = args.includes('--forever');
 const EXIT_WHEN_IDLE = args.includes('--exit-when-idle');
 const DEADLINE = getArg('until') ? parseInt(getArg('until'), 10) * 1000 : Infinity;
+// Stop before the database outgrows its disk (sqld keeps replication snapshots of about the same size again).
+const MAX_DB_MB = getArg('max-db-mb') ? parseFloat(getArg('max-db-mb')) : Infinity;
 
 const mika = createMikaClient({
   rate: parseFloat(getArg('rate', '2')),
@@ -341,6 +343,12 @@ async function main() {
   let totalEnriched = 0;
   let totalWritten = 0;
   let idle = false;
+  let diskLimitReached = false;
+
+  const dbSizeMb = async () => {
+    const r = (await client.execute('SELECT page_count * page_size AS bytes FROM pragma_page_count(), pragma_page_size()')).rows[0];
+    return Math.round(Number(r.bytes) / 1e6);
+  };
 
   sweeps:
   for (let sweep = 1; ; sweep++) {
@@ -349,6 +357,14 @@ async function main() {
       let lastMaxId = 0;
       for (let pass = 1; ; pass++) {
         if (mika.pastDeadline()) break sweeps;
+        if (MAX_DB_MB !== Infinity && !IS_TEST) {
+          const sizeMb = await dbSizeMb();
+          if (sizeMb >= MAX_DB_MB) {
+            console.log(`\n🛑 Database is ${sizeMb} MB (limit ${MAX_DB_MB} MB): stopping so the server disk does not fill up. Raise --max-db-mb once there is more disk space.`);
+            diskLimitReached = true;
+            break sweeps;
+          }
+        }
         console.log(`\n🔍 [Sweep ${sweep} · season ${season} · pass ${pass}] Querying pending athletes (cursor a.id > ${lastMaxId})...`);
         const athletes = await fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog);
         if (athletes.length === 0) {
@@ -379,7 +395,7 @@ async function main() {
   }
 
   mika.close();
-  const moreWork = FOREVER && !idle && mika.pastDeadline();
+  const moreWork = FOREVER && !idle && !diskLimitReached && mika.pastDeadline();
   console.log(`\n\n🏁 Backfill Engine Finished${mika.pastDeadline() ? ' (time budget reached)' : ''}!`);
   console.log(`   Grand Total Processed: ${totalProcessed.toLocaleString()}`);
   console.log(`   Grand Total Enriched:  ${totalEnriched.toLocaleString()}`);
