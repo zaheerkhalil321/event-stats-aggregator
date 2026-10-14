@@ -510,14 +510,14 @@ async function writeUpdates(items) {
     return;
   }
   const statements = items.map((u) => ({ sql: updateSql(u) }));
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       await client.batch(statements, 'write');
       return;
     } catch (err) {
       console.warn(`⚠️ [Flush] DB batch write attempt ${attempt} failed:`, err.message);
-      if (attempt === 3) throw err;
-      await sleep(1000 * attempt);
+      if (attempt === 6) throw err;
+      await sleep(2000 * attempt);
     }
   }
 }

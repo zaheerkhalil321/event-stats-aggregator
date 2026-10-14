@@ -52,7 +52,7 @@ on:
       max_db_mb:
         description: 'Stop filling splits once the database reaches this size in MB (protects the VPS disk)'
         required: false
-        default: '1200'
+        default: '2800'
         type: string
   schedule:
     - cron: '23 */6 * * *'
@@ -78,7 +78,7 @@ jobs:
       IN_SEASON: ${{ inputs.season || 'all' }}
       IN_MINUTES: ${{ inputs.minutes || '335' }}
       IN_MAX_RATE: ${{ inputs.max_rate || '6' }}
-      IN_MAX_DB_MB: ${{ inputs.max_db_mb || '1200' }}
+      IN_MAX_DB_MB: ${{ inputs.max_db_mb || '2800' }}
 
     steps:
       - name: 📦 Checkout repository

@@ -133,7 +133,7 @@ async function writeMatches(matches) {
         await client.batch(statements, 'write');
         break;
       } catch (err) {
-        if (attempt === 3) throw err;
+        if (attempt === 6) throw err;
         console.warn(`⚠️ DB write attempt ${attempt} failed: ${err.message}`);
         await new Promise((r) => setTimeout(r, 2000 * attempt));
       }
