@@ -106,4 +106,15 @@ describe('mika list-to-database matching', () => {
     const items = dedupeItems([it_('X1_BER', 'Doe, Jane', '01:30:00', 'H_BER26_OVERALL'), it_('X1', 'Doe, Jane', '01:30:00', 'H_LR3MS4JI1633')]);
     assert.deepEqual(items.map((i) => [i.idp, i.event]), [['X1', 'H_LR3MS4JI1633']]);
   });
+
+  it('TC63: multi-week events (New York "Week I/II" lists) are treated as merged lists, not as extra days', () => {
+    const items = dedupeItems([
+      it_('LR3MS4JI5260FF_JFK_1', 'Seeland, Esther', '01:01:24', 'H_JFK26_OVERALL_1'),
+      it_('LR3MS4JI5260FF_JFK', 'Seeland, Esther', '01:01:24', 'H_JFK26_OVERALL'),
+      it_('LR3MS4JI5260FF', 'Seeland, Esther', '01:01:24', 'H_LR3MS4JI1628'),
+    ]);
+    assert.deepEqual(items.map((i) => i.event), ['H_LR3MS4JI1628']);
+    const matches = matchItemsToRows(items, [{ id: 9, full_name: 'Seeland, Esther', total_time: '01:01:24', division: 'HYROX WOMEN' }]);
+    assert.deepEqual(matches.map((m) => [m.id, m.idp]), [[9, 'LR3MS4JI5260FF']]);
+  });
 });

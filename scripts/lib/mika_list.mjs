@@ -100,10 +100,12 @@ export function divisionFamily(division) {
   return 'single';
 }
 
-export const isOverallWave = (val) => /_OVERALL$/i.test(String(val ?? ''));
+// Merged lists: H_BER26_OVERALL, and per-week ones on multi-week events (H_JFK26_OVERALL_1).
+export const isOverallWave = (val) => /_OVERALL(_\d+)?$/i.test(String(val ?? ''));
 
-// Overall-wave links carry a city suffix on the idp (LR3MS4JI517A9D_BER); the athlete is the same.
-export const baseIdp = (idp) => String(idp ?? '').replace(/_[A-Z]{2,5}$/, '');
+// Merged-list links carry a suffix on the idp (LR3MS4JI517A9D_BER, LR3MS4JI5260FF_JFK_1);
+// mika idps themselves never contain "_", so the athlete is identified by the part before it.
+export const baseIdp = (idp) => String(idp ?? '').split('_')[0];
 
 // One entry per athlete, preferring the day-wave entry (exact wave code) over the overall one.
 export function dedupeItems(items) {
