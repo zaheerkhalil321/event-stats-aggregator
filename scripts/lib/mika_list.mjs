@@ -118,7 +118,7 @@ export function dedupeItems(items) {
   return [...byAthlete.values()];
 }
 
-const words = (s) => String(s ?? '')
+export const labelWords = (s) => String(s ?? '')
   .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
   .toLowerCase().split(/[^a-z0-9]+/)
   .filter((w) => w && w !== 'hyrox' && !/^\d{4}$/.test(w));
@@ -131,21 +131,21 @@ const words = (s) => String(s ?? '')
  */
 export function pickRaceGroup(groupsBySlug, race, preferredSlug) {
   const raceYear = String(race.date ?? '').slice(0, 4) || String(race.id).match(/(\d{4})/)?.[1];
-  const raceWords = new Set([...words(race.name), ...words(race.city), ...words(race.id)]);
-  const cityWords = words(race.city);
+  const raceWords = new Set([...labelWords(race.name), ...labelWords(race.city), ...labelWords(race.id)]);
+  const cityWords = labelWords(race.city);
   const scored = [];
   for (const [slug, groups] of Object.entries(groupsBySlug)) {
     for (const group of groups) {
       const m = group.label.match(/^(\d{4})\s+(.*)$/);
       if (!m || m[1] !== raceYear) continue;
-      const labelWords = words(m[2]);
-      if (!labelWords.length) continue;
-      const labelInRace = labelWords.every((w) => raceWords.has(w));
-      const cityInLabel = cityWords.length > 0 && cityWords.every((w) => labelWords.includes(w));
+      const groupWords = labelWords(m[2]);
+      if (!groupWords.length) continue;
+      const labelInRace = groupWords.every((w) => raceWords.has(w));
+      const cityInLabel = cityWords.length > 0 && cityWords.every((w) => groupWords.includes(w));
       if (!labelInRace && !cityInLabel) continue;
-      const score = labelWords.filter((w) => raceWords.has(w)).length
+      const score = groupWords.filter((w) => raceWords.has(w)).length
         + (labelInRace ? 2 : 0)
-        - (labelInRace ? 0 : labelWords.filter((w) => !raceWords.has(w)).length)
+        - (labelInRace ? 0 : groupWords.filter((w) => !raceWords.has(w)).length)
         + (slug === preferredSlug ? 0.5 : 0);
       scored.push({ slug, group, score });
     }

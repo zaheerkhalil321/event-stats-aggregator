@@ -23,7 +23,7 @@ import fs from 'fs';
 import { createClient } from '@libsql/client';
 import dotenv from 'dotenv';
 import { createMikaClient } from './lib/mika_http.mjs';
-import { parseSeasonGroups, parseListPage, pickRaceGroup, matchItemsToRows, dedupeItems, isOverallWave, waveFamily, divisionFamily } from './lib/mika_list.mjs';
+import { parseSeasonGroups, parseListPage, pickRaceGroup, matchItemsToRows, dedupeItems, isOverallWave, waveFamily, divisionFamily, labelWords } from './lib/mika_list.mjs';
 
 dotenv.config();
 
@@ -51,7 +51,9 @@ const LIMIT_RACES = getArg('limit-races') ? parseInt(getArg('limit-races'), 10) 
 const DEADLINE = getArg('until') ? parseInt(getArg('until'), 10) * 1000 : Infinity;
 const WAVE_CONCURRENCY = 4;
 
-const SEASON_SLUGS = ['season-9', 'season-8', 'season-7', 'season-6', 'season-5'];
+const SEASON_SLUGS = ['season-9', 'season-8', 'season-7', 'season-6', 'season-5', 'season-4', 'season-3', 'season-2'];
+// A race group is only trusted when its first list page contains at least this many of the race's athletes.
+const PROBE_MIN_HITS = 10;
 const BASE = 'https://hyrox.r.mikatiming.com';
 
 const mika = createMikaClient({
@@ -61,6 +63,7 @@ const mika = createMikaClient({
 });
 
 function expectedSlug(race) {
+  if (/^season-\d+$/.test(String(race.season))) return String(race.season);
   if (race.season === '26/27') return 'season-9';
   if (race.season === '25/26') return 'season-8';
   if (race.season === '24/25') return 'season-7';
@@ -107,6 +110,59 @@ async function findGroup(race) {
     if (!(await loadSeason(slug))) return { error: `season page ${slug} unavailable` };
   }
   return { pick: pickRaceGroup(seasonGroups, race, preferred) };
+}
+
+// How many of the race's athletes appear on page 1 of the group's list for its biggest division.
+async function probeGroup({ slug, group }, rows) {
+  const counts = rows.reduce((acc, r) => acc.set(divisionFamily(r.division), (acc.get(divisionFamily(r.division)) || 0) + 1), new Map());
+  const families = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => f);
+  for (const family of families) {
+    const waves = group.options.filter((o) => waveFamily(o.val) === family);
+    const wave = waves.find((o) => /_OVERALL$/i.test(o.val)) || waves.find((o) => !isOverallWave(o.val)) || waves[0];
+    if (!wave) continue;
+    const res = await mika.get(`${BASE}/${slug}/?event=${wave.val}&pid=list&num_results=100&page=1`);
+    if (res.status !== 200) return null;
+    const items = parseListPage(res.text).items.map((it) => ({ ...it, event: it.event || wave.val }));
+    return matchItemsToRows(items, rows).length;
+  }
+  return 0;
+}
+
+// Race metadata in the database often disagrees with mika (dallas-2025 is "2024 Dallas" on mika,
+// london-spring-2025 is not "2025 London Excel"), so a name/year guess is checked against content,
+// and when it fails every same-city group of every season is probed and the best one wins.
+async function chooseGroup(race, rows) {
+  const lookup = await findGroup(race);
+  if (lookup.error) return lookup;
+  if (lookup.pick) {
+    const hits = await probeGroup(lookup.pick, rows);
+    if (hits === null) return { error: 'probe request failed' };
+    if (hits >= PROBE_MIN_HITS) return { pick: lookup.pick, via: `name, ${hits} probe hits` };
+  }
+  for (const slug of SEASON_SLUGS) {
+    if (!(await loadSeason(slug))) return { error: `season page ${slug} unavailable` };
+  }
+  const cityWords = labelWords(race.city);
+  if (!cityWords.length) return { pick: null };
+  const raceYear = Number(String(race.date ?? '').slice(0, 4)) || 0;
+  const candidates = [];
+  for (const [slug, groups] of Object.entries(seasonGroups)) {
+    for (const group of groups) {
+      if (lookup.pick && lookup.pick.group === group) continue;
+      if (!cityWords.every((w) => labelWords(group.label).includes(w))) continue;
+      const year = Number(group.label.match(/^(\d{4})/)?.[1]) || raceYear;
+      candidates.push({ slug, group, distance: Math.abs(year - raceYear) });
+    }
+  }
+  candidates.sort((a, b) => a.distance - b.distance);
+  let best = null;
+  for (const c of candidates.slice(0, 12)) {
+    const hits = await probeGroup(c, rows);
+    if (hits === null) return { error: 'probe request failed' };
+    if (hits >= PROBE_MIN_HITS && (!best || hits > best.hits)) best = { ...c, hits };
+    if (mika.pastDeadline()) return { pick: null };
+  }
+  return best ? { pick: best, via: `content, ${best.hits} probe hits over ${Math.min(12, candidates.length)} candidates` } : { pick: null };
 }
 
 async function logRace(raceId, fields) {
@@ -191,23 +247,24 @@ async function scrapeWave(slug, wave) {
 }
 
 async function discoverRace(race) {
-  const lookup = await findGroup(race);
+  const rows = (await client.execute({
+    sql: `SELECT id, full_name, total_time, division FROM hyrox_athlete_results WHERE race_id = ? AND (mika_idp IS NULL OR mika_idp = '')`,
+    args: [race.id],
+  })).rows;
+
+  const lookup = await chooseGroup(race, rows);
   if (mika.pastDeadline()) return { stopped: true };
   if (lookup.error) {
     console.log(`   ⚠️ ${race.id}: ${lookup.error} — will retry next run`);
     return { matched: 0 };
   }
   if (!lookup.pick) {
-    await logRace(race.id, { status: 'no_group', note: 'no unambiguous race group on the mika season pages' });
-    console.log(`   ⚠️ ${race.id}: no matching race group on mika — skipped`);
+    await logRace(race.id, { status: 'no_group', note: 'no mika race group contains these athletes' });
+    console.log(`   ⚠️ ${race.id}: no mika race group contains these athletes — skipped`);
     return { matched: 0 };
   }
   const { slug, group } = lookup.pick;
-
-  const rows = (await client.execute({
-    sql: `SELECT id, full_name, total_time, division FROM hyrox_athlete_results WHERE race_id = ? AND (mika_idp IS NULL OR mika_idp = '')`,
-    args: [race.id],
-  })).rows;
+  console.log(`   🎯 ${race.id} → "${group.label}" (${slug}, chosen by ${lookup.via})`);
   const existingIdps = new Set((await client.execute({
     sql: `SELECT mika_idp FROM hyrox_athlete_results WHERE race_id = ? AND mika_idp IS NOT NULL AND mika_idp != ''`,
     args: [race.id],
