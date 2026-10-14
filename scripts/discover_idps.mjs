@@ -12,7 +12,8 @@
  * Finished races are recorded in mika_discovery_log and skipped next time.
  *
  * Usage:
- *   node scripts/discover_idps.mjs                         # all races, most recent first
+ *   node scripts/discover_idps.mjs                         # all races, those missing the most idps first
+ *   node scripts/discover_idps.mjs --include-residual      # also races with only a few leftovers
  *   node scripts/discover_idps.mjs --race berlin-2026 --test --max-pages 2   # dry run, no DB writes
  *   node scripts/discover_idps.mjs --until 1791950000      # stop at this unix time (GitHub Actions budget)
  *   node scripts/discover_idps.mjs --retry-done            # re-scan races already marked done
@@ -44,10 +45,11 @@ function getArg(key, dflt = null) {
 const TARGET_RACE = getArg('race');
 const IS_TEST = args.includes('--test');
 const RETRY_DONE = args.includes('--retry-done');
+const INCLUDE_RESIDUAL = args.includes('--include-residual');
 const MAX_PAGES = getArg('max-pages') ? parseInt(getArg('max-pages'), 10) : 400;
 const LIMIT_RACES = getArg('limit-races') ? parseInt(getArg('limit-races'), 10) : null;
 const DEADLINE = getArg('until') ? parseInt(getArg('until'), 10) * 1000 : Infinity;
-const WAVE_CONCURRENCY = 3;
+const WAVE_CONCURRENCY = 4;
 
 const SEASON_SLUGS = ['season-9', 'season-8', 'season-7', 'season-6', 'season-5'];
 const BASE = 'https://hyrox.r.mikatiming.com';
@@ -259,17 +261,29 @@ async function main() {
   if (!IS_TEST) await ensureSchema();
   const logExists = (await client.execute(`SELECT name FROM sqlite_master WHERE type='table' AND name='mika_discovery_log'`)).rows.length > 0;
 
-  const races = (await client.execute({
-    sql: `SELECT r.id, r.name, r.city, r.season, r.date, COUNT(*) AS missing
+  // Races where most athletes lack an idp come first. A handful of leftovers in an otherwise
+  // complete race are almost always duplicate rows whose athlete already has an idp, and scanning
+  // the whole race for them costs ~1 request per 100 athletes, so those races are skipped.
+  const allRaces = (await client.execute({
+    sql: `SELECT r.id, r.name, r.city, r.season, r.date,
+            SUM(CASE WHEN a.mika_idp IS NULL OR a.mika_idp = '' THEN 1 ELSE 0 END) AS missing,
+            COUNT(*) AS total
           FROM hyrox_athlete_results a JOIN hyrox_races r ON a.race_id = r.id
-          WHERE (a.mika_idp IS NULL OR a.mika_idp = '')
+          WHERE 1 = 1
             ${TARGET_RACE ? 'AND r.id = ?' : ''}
             ${logExists && !RETRY_DONE && !TARGET_RACE ? `AND r.id NOT IN (SELECT race_id FROM mika_discovery_log WHERE status IN ('done', 'no_group'))` : ''}
-          GROUP BY r.id ORDER BY r.date DESC`,
+          GROUP BY r.id
+          HAVING missing > 0
+          ORDER BY (missing * 1.0 / total) DESC, missing DESC`,
     args: TARGET_RACE ? [TARGET_RACE] : [],
-  })).rows.slice(0, LIMIT_RACES ?? undefined);
+  })).rows;
+  const isResidual = (r) => Number(r.missing) < 200 && Number(r.missing) / Number(r.total) < 0.05;
+  const races = allRaces.filter((r) => TARGET_RACE || INCLUDE_RESIDUAL || !isResidual(r)).slice(0, LIMIT_RACES ?? undefined);
+  const skipped = allRaces.length - races.length;
 
-  console.log(`Races to scan: ${races.length} (${races.reduce((s, r) => s + Number(r.missing), 0).toLocaleString()} athletes without an idp)\n`);
+  console.log(`Races to scan: ${races.length} (${races.reduce((s, r) => s + Number(r.missing), 0).toLocaleString()} athletes without an idp)`);
+  if (skipped) console.log(`Skipped ${skipped} nearly complete races (< 200 and < 5% of athletes without an idp; use --include-residual to scan them)`);
+  console.log('');
 
   let matchedTotal = 0;
   let scanned = 0;
