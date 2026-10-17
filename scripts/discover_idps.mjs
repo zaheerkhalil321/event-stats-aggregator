@@ -93,11 +93,34 @@ async function ensureSchema() {
 }
 
 const seasonGroups = {};
+// Season of a race by its date (seasons run July to June: 2025-11 → season-8).
+function dateSlug(race) {
+  const m = String(race.date ?? '').match(/^(\d{4})-(\d{2})/);
+  if (!m) return null;
+  const n = Number(m[1]) - (Number(m[2]) >= 7 ? 2017 : 2018);
+  return n >= 2 && n <= 9 ? `season-${n}` : null;
+}
+
+// Each season has one group without a year ("sonstige") that holds the waves of many events the
+// dropdown does not list by name (dallas-2025, frankfurt-2025, ...). It is split into one pseudo
+// group per race code so each hidden event can be probed and scanned on its own.
+const hiddenGroups = {};
+
 async function loadSeason(slug) {
   if (seasonGroups[slug]) return true;
   const res = await mika.get(`${BASE}/${slug}/?pid=list`);
   if (res.status !== 200) return false; // not cached, so a temporary failure is retried for the next race
-  seasonGroups[slug] = parseSeasonGroups(res.text);
+  const groups = parseSeasonGroups(res.text);
+  seasonGroups[slug] = groups.filter((g) => /\b\d{4}\b/.test(g.label));
+  const byCode = new Map();
+  for (const g of groups.filter((g) => !/\b\d{4}\b/.test(g.label))) {
+    for (const o of g.options) {
+      const code = o.val.slice(o.val.indexOf('_') + 1);
+      if (!byCode.has(code)) byCode.set(code, { label: `${g.label} ${code}`, options: [], hidden: true });
+      byCode.get(code).options.push(o);
+    }
+  }
+  hiddenGroups[slug] = [...byCode.values()];
   return true;
 }
 
@@ -135,20 +158,23 @@ async function cityCandidates(race, exclude, maxYearDistance = Infinity) {
     if (!(await loadSeason(slug))) return { error: `season page ${slug} unavailable` };
   }
   const cityWords = labelWords(race.city);
-  if (!cityWords.length) return { candidates: [] };
   const raceYear = Number(String(race.date ?? '').slice(0, 4)) || 0;
   const candidates = [];
   for (const [slug, groups] of Object.entries(seasonGroups)) {
     for (const group of groups) {
       if (exclude.has(group)) continue;
-      if (!cityWords.every((w) => labelWords(group.label).includes(w))) continue;
+      if (!cityWords.length || !cityWords.every((w) => labelWords(group.label).includes(w))) continue;
       const year = Number(group.label.match(/^(\d{4})/)?.[1]) || raceYear;
       const distance = Math.abs(year - raceYear);
       if (distance <= maxYearDistance) candidates.push({ slug, group, distance });
     }
   }
   candidates.sort((a, b) => a.distance - b.distance);
-  return { candidates: candidates.slice(0, 12) };
+  const hidden = [];
+  for (const slug of new Set([expectedSlug(race), dateSlug(race)].filter(Boolean))) {
+    for (const group of hiddenGroups[slug] ?? []) if (!exclude.has(group)) hidden.push({ slug, group, distance: 0 });
+  }
+  return { candidates: [...candidates.slice(0, 12), ...hidden] };
 }
 
 // The candidate whose page-1 list contains the most of these rows (at least PROBE_MIN_HITS).
