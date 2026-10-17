@@ -9,7 +9,8 @@
  *   2. page through every day-wave list (100 per page) through the polite rate limiter
  *   3. match list entries to database rows one-to-one (name + finish time, see mika_list.mjs)
  *   4. store mika_idp and the exact wave code (mika_event), so the backfill needs one request per athlete
- * Finished races are recorded in mika_discovery_log and skipped next time.
+ * When athletes are left over, other same-city groups of the same or adjacent year are probed and scanned
+ * too (one database race can be two mika events). Finished races are recorded in mika_discovery_log.
  *
  * Usage:
  *   node scripts/discover_idps.mjs                         # all races, those missing the most idps first
@@ -128,6 +129,40 @@ async function probeGroup({ slug, group }, rows) {
   return 0;
 }
 
+// Same-city groups of every season, closest year first, skipping groups already used.
+async function cityCandidates(race, exclude, maxYearDistance = Infinity) {
+  for (const slug of SEASON_SLUGS) {
+    if (!(await loadSeason(slug))) return { error: `season page ${slug} unavailable` };
+  }
+  const cityWords = labelWords(race.city);
+  if (!cityWords.length) return { candidates: [] };
+  const raceYear = Number(String(race.date ?? '').slice(0, 4)) || 0;
+  const candidates = [];
+  for (const [slug, groups] of Object.entries(seasonGroups)) {
+    for (const group of groups) {
+      if (exclude.has(group)) continue;
+      if (!cityWords.every((w) => labelWords(group.label).includes(w))) continue;
+      const year = Number(group.label.match(/^(\d{4})/)?.[1]) || raceYear;
+      const distance = Math.abs(year - raceYear);
+      if (distance <= maxYearDistance) candidates.push({ slug, group, distance });
+    }
+  }
+  candidates.sort((a, b) => a.distance - b.distance);
+  return { candidates: candidates.slice(0, 12) };
+}
+
+// The candidate whose page-1 list contains the most of these rows (at least PROBE_MIN_HITS).
+async function bestCandidate(candidates, rows) {
+  let best = null;
+  for (const c of candidates) {
+    const hits = await probeGroup(c, rows);
+    if (hits === null) return { error: 'probe request failed' };
+    if (hits >= PROBE_MIN_HITS && (!best || hits > best.hits)) best = { ...c, hits };
+    if (mika.pastDeadline()) break;
+  }
+  return { best };
+}
+
 // Race metadata in the database often disagrees with mika (dallas-2025 is "2024 Dallas" on mika,
 // london-spring-2025 is not "2025 London Excel"), so a name/year guess is checked against content,
 // and when it fails every same-city group of every season is probed and the best one wins.
@@ -139,30 +174,11 @@ async function chooseGroup(race, rows) {
     if (hits === null) return { error: 'probe request failed' };
     if (hits >= PROBE_MIN_HITS) return { pick: lookup.pick, via: `name, ${hits} probe hits` };
   }
-  for (const slug of SEASON_SLUGS) {
-    if (!(await loadSeason(slug))) return { error: `season page ${slug} unavailable` };
-  }
-  const cityWords = labelWords(race.city);
-  if (!cityWords.length) return { pick: null };
-  const raceYear = Number(String(race.date ?? '').slice(0, 4)) || 0;
-  const candidates = [];
-  for (const [slug, groups] of Object.entries(seasonGroups)) {
-    for (const group of groups) {
-      if (lookup.pick && lookup.pick.group === group) continue;
-      if (!cityWords.every((w) => labelWords(group.label).includes(w))) continue;
-      const year = Number(group.label.match(/^(\d{4})/)?.[1]) || raceYear;
-      candidates.push({ slug, group, distance: Math.abs(year - raceYear) });
-    }
-  }
-  candidates.sort((a, b) => a.distance - b.distance);
-  let best = null;
-  for (const c of candidates.slice(0, 12)) {
-    const hits = await probeGroup(c, rows);
-    if (hits === null) return { error: 'probe request failed' };
-    if (hits >= PROBE_MIN_HITS && (!best || hits > best.hits)) best = { ...c, hits };
-    if (mika.pastDeadline()) return { pick: null };
-  }
-  return best ? { pick: best, via: `content, ${best.hits} probe hits over ${Math.min(12, candidates.length)} candidates` } : { pick: null };
+  const found = await cityCandidates(race, new Set(lookup.pick ? [lookup.pick.group] : []));
+  if (found.error) return found;
+  const { best, error } = await bestCandidate(found.candidates, rows);
+  if (error) return { error };
+  return best ? { pick: best, via: `content, ${best.hits} probe hits over ${found.candidates.length} candidates` } : { pick: null };
 }
 
 async function logRace(raceId, fields) {
@@ -246,6 +262,36 @@ async function scrapeWave(slug, wave) {
   return { items, complete: pages <= MAX_PAGES };
 }
 
+// Pages through one group's waves and matches the listed athletes to the given rows.
+async function scanGroup(slug, group, rows, existingIdps) {
+  const families = new Set(rows.map((r) => divisionFamily(r.division)));
+  const wanted = (o) => { const f = waveFamily(o.val); return f === null || families.has(f); };
+  let waves = group.options.filter((o) => !isOverallWave(o.val) && wanted(o));
+  if (!waves.length) waves = group.options.filter((o) => isOverallWave(o.val) && wanted(o));
+
+  const day = await scrapeWaves(slug, waves);
+  // Some day waves show "no results available" although the athletes exist: they are only listed
+  // in that division's _OVERALL wave, so scan it for the families where a day wave came back empty.
+  const overallWaves = waves.some((w) => isOverallWave(w.val))
+    ? []
+    : group.options.filter((o) => isOverallWave(o.val) && day.emptyFamilies.has(waveFamily(o.val)));
+  const overall = overallWaves.length ? await scrapeWaves(slug, overallWaves) : { items: [], errors: [], complete: true };
+  const items = dedupeItems([...day.items, ...overall.items]);
+  const matches = matchItemsToRows(items, rows, existingIdps);
+  return {
+    items,
+    matches,
+    waves: waves.length + overallWaves.length,
+    errors: [...day.errors, ...overall.errors],
+    complete: day.complete && overall.complete,
+  };
+}
+
+// Some database races are two mika events ("2026 Brisbane" + "2026 APAC Championship Brisbane",
+// "2026 Beijing I" + "2026 Beijing"), so leftovers are probed against other same-city groups.
+const EXTRA_GROUPS_MAX = 4;
+const EXTRA_MIN_LEFT = 20;
+
 async function discoverRace(race) {
   const rows = (await client.execute({
     sql: `SELECT id, full_name, total_time, division FROM hyrox_athlete_results WHERE race_id = ? AND (mika_idp IS NULL OR mika_idp = '')`,
@@ -263,49 +309,58 @@ async function discoverRace(race) {
     console.log(`   ⚠️ ${race.id}: no mika race group contains these athletes — skipped`);
     return { matched: 0 };
   }
-  const { slug, group } = lookup.pick;
-  console.log(`   🎯 ${race.id} → "${group.label}" (${slug}, chosen by ${lookup.via})`);
   const existingIdps = new Set((await client.execute({
     sql: `SELECT mika_idp FROM hyrox_athlete_results WHERE race_id = ? AND mika_idp IS NOT NULL AND mika_idp != ''`,
     args: [race.id],
   })).rows.map((r) => r.mika_idp));
 
-  const families = new Set(rows.map((r) => divisionFamily(r.division)));
-  const wanted = (o) => { const f = waveFamily(o.val); return f === null || families.has(f); };
-  let waves = group.options.filter((o) => !isOverallWave(o.val) && wanted(o));
-  if (!waves.length) waves = group.options.filter((o) => isOverallWave(o.val) && wanted(o));
+  const used = [];
+  const allMatches = [];
+  const errors = [];
+  let listItems = 0;
+  let complete = true;
+  let left = rows;
+  let pick = lookup.pick;
+  let via = lookup.via;
+  while (pick) {
+    const { slug, group } = pick;
+    console.log(`   🎯 ${race.id} → "${group.label}" (${slug}, chosen by ${via})`);
+    const r = await scanGroup(slug, group, left, existingIdps);
+    if (!IS_TEST && r.matches.length) await writeMatches(r.matches);
+    for (const m of r.matches) existingIdps.add(m.idp);
+    const byVia = r.matches.reduce((acc, m) => ({ ...acc, [m.via]: (acc[m.via] || 0) + 1 }), {});
+    const pct = left.length ? Math.round((r.matches.length / left.length) * 100) : 100;
+    console.log(`   ✅ ${race.id} [${group.label} · ${slug}] waves ${r.waves} | listed ${r.items.length} | matched ${r.matches.length}/${left.length} (${pct}%) ${JSON.stringify(byVia)}${r.errors.length ? ` | ⚠️ ${r.errors.length} wave errors` : ''}`);
+    if (IS_TEST) reportUnmatched(left, r.items, r.matches);
 
-  const day = await scrapeWaves(slug, waves);
-  // Some day waves show "no results available" although the athletes exist: they are only listed
-  // in that division's _OVERALL wave, so scan it for the families where a day wave came back empty.
-  const overallWaves = waves.some((w) => isOverallWave(w.val))
-    ? []
-    : group.options.filter((o) => isOverallWave(o.val) && day.emptyFamilies.has(waveFamily(o.val)));
-  const overall = overallWaves.length ? await scrapeWaves(slug, overallWaves) : { items: [], errors: [], complete: true };
-  const items = dedupeItems([...day.items, ...overall.items]);
-  const errors = [...day.errors, ...overall.errors];
-  const complete = day.complete && overall.complete;
-  waves = [...waves, ...overallWaves];
+    used.push(pick);
+    allMatches.push(...r.matches);
+    errors.push(...r.errors);
+    listItems += r.items.length;
+    complete = complete && r.complete;
+    const matchedIds = new Set(r.matches.map((m) => m.id));
+    left = left.filter((row) => !matchedIds.has(row.id));
 
-  const matches = matchItemsToRows(items, rows, existingIdps);
-  if (!IS_TEST && matches.length) await writeMatches(matches);
-
-  const byVia = matches.reduce((acc, m) => ({ ...acc, [m.via]: (acc[m.via] || 0) + 1 }), {});
-  const pct = rows.length ? Math.round((matches.length / rows.length) * 100) : 100;
-  console.log(`   ✅ ${race.id} [${group.label} · ${slug}] waves ${waves.length} | listed ${items.length} | matched ${matches.length}/${rows.length} (${pct}%) ${JSON.stringify(byVia)}${errors.length ? ` | ⚠️ ${errors.length} wave errors` : ''}`);
-  if (IS_TEST) reportUnmatched(rows, items, matches);
+    pick = null;
+    if (mika.pastDeadline() || left.length < EXTRA_MIN_LEFT || used.length > EXTRA_GROUPS_MAX) break;
+    const found = await cityCandidates(race, new Set(used.map((u) => u.group)), 1);
+    if (found.error) { errors.push(found.error); break; }
+    const { best, error } = await bestCandidate(found.candidates, left);
+    if (error) { errors.push(error); break; }
+    if (best) { pick = best; via = `leftovers, ${best.hits} probe hits`; }
+  }
 
   const finished = complete && errors.length === 0 && !mika.pastDeadline();
   await logRace(race.id, {
     status: finished ? 'done' : 'partial',
-    slug,
-    label: group.label,
-    listItems: items.length,
-    matched: matches.length,
-    stillMissing: rows.length - matches.length,
+    slug: used.map((u) => u.slug).join(' + '),
+    label: used.map((u) => u.group.label).join(' + '),
+    listItems,
+    matched: allMatches.length,
+    stillMissing: left.length,
     note: errors.slice(0, 3).join('; ') || null,
   });
-  return { matched: matches.length, stopped: mika.pastDeadline() };
+  return { matched: allMatches.length, stopped: mika.pastDeadline() };
 }
 
 async function main() {
