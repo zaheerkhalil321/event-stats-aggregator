@@ -1,0 +1,77 @@
+name: ⚡ Splits Backfill Boost (parallel shards)
+
+# Extra runners for a large splits queue. mika:timing rate-limits per IP and every runner gets its
+# own IP, so N shards fetch N times faster. Each shard only takes athletes with id % N = k; the
+# main backfill-splits.yml run keeps going and at worst refetches a few athletes a shard just did.
+# Runs once (no chaining, no discovery); start it again if the queue is still large.
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: 'Number of parallel runners (2-4)'
+        required: false
+        default: '3'
+        type: choice
+        options: ['2', '3', '4']
+      minutes:
+        description: 'Time budget in minutes (max 335)'
+        required: false
+        default: '335'
+        type: string
+      max_db_mb:
+        description: 'Stop once the database reaches this size in MB (protects the VPS disk)'
+        required: false
+        default: '3000'
+        type: string
+
+concurrency:
+  group: deep-splits-backfill-boost
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  shard:
+    name: ⚡ Shard ${{ matrix.k }}/${{ inputs.shards }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        k: [0, 1, 2, 3]
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      IN_SHARDS: ${{ inputs.shards }}
+      IN_MINUTES: ${{ inputs.minutes || '335' }}
+      IN_MAX_DB_MB: ${{ inputs.max_db_mb || '3000' }}
+      SHARD_K: ${{ matrix.k }}
+
+    steps:
+      - name: Skip shards above the requested count
+        id: gate
+        run: echo "run=$([ "$SHARD_K" -lt "$IN_SHARDS" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: 📦 Checkout repository
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: npm ci
+
+      - name: 🚀 Fill splits for this shard
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          MINUTES=$(( IN_MINUTES > 335 ? 335 : IN_MINUTES ))
+          DEADLINE=$(( $(date +%s) + MINUTES * 60 ))
+          node scripts/backfill_splits.mjs --seasons all --forever --exit-when-idle \
+            --until "$DEADLINE" --max-rate 6 --max-db-mb "$IN_MAX_DB_MB" --shard "$SHARD_K/$IN_SHARDS"

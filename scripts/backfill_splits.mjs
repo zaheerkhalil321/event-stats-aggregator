@@ -65,6 +65,12 @@ const EXIT_WHEN_IDLE = args.includes('--exit-when-idle');
 const DEADLINE = getArg('until') ? parseInt(getArg('until'), 10) * 1000 : Infinity;
 // Stop before the database outgrows its disk (sqld keeps replication snapshots of about the same size again).
 const MAX_DB_MB = getArg('max-db-mb') ? parseFloat(getArg('max-db-mb')) : Infinity;
+// --shard k/n: only athletes with id % n = k, so parallel runners (each with its own IP and
+// therefore its own mika rate limit) work on different athletes.
+const SHARD = (() => {
+  const m = String(getArg('shard', '') || '').match(/^(\d+)\/(\d+)$/);
+  return m && Number(m[2]) > 1 && Number(m[1]) < Number(m[2]) ? { k: Number(m[1]), n: Number(m[2]) } : null;
+})();
 
 const mika = createMikaClient({
   rate: parseFloat(getArg('rate', '2')),
@@ -333,6 +339,7 @@ async function main() {
   if (FOREVER) console.log(`Mode:            run until nothing is pending${EXIT_WHEN_IDLE ? ', then exit' : ', then keep checking'}`);
   if (DEADLINE !== Infinity) console.log(`Stops at:        ${new Date(DEADLINE).toISOString()}`);
   if (LIMIT) console.log(`Limit:           ${LIMIT}`);
+  if (SHARD) console.log(`Shard:           ${SHARD.k}/${SHARD.n} (id % ${SHARD.n} = ${SHARD.k})`);
   console.log('-------------------------------------------------------------\n');
 
   const columns = (await client.execute('PRAGMA table_info(hyrox_athlete_results)')).rows.map((r) => r.name);
@@ -427,6 +434,7 @@ async function fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog) {
   `;
   if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
   if (TARGET_DIV) query += ` AND a.division = ${esc(TARGET_DIV)}`;
+  if (SHARD) query += ` AND (a.id % ${SHARD.n}) = ${SHARD.k}`;
   query += seasonFilter(season);
   query += ` ORDER BY a.id ASC LIMIT ${LIMIT || 3000}`;
   return (await client.execute(query)).rows;
