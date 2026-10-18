@@ -9,7 +9,7 @@ names: `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (see `.env`; never print the to
   1. `scripts/discover_idps.mjs` finds missing `mika_idp` + exact wave (`mika_event`) from list pages
      (100 athletes/request), matching rows by name + finish time; progress in table `mika_discovery_log`.
   2. `scripts/backfill_splits.mjs` fetches each athlete's detail page (17 splits, station ranks,
-     race replay, team members). Stops at `--max-db-mb` (workflow input, default 2800).
+     race replay, team members). Stops at `--max-db-mb` (workflow input, default 3000).
 - `.github/workflows/live-sync.yml` → `sync_live.mjs` (Playwright, hourly via Upstash, gated by `check_active_today.mjs`).
 - `.github/workflows/pipeline.yml` → `sync_events.mjs` (Monday calendar/races).
 - Most other `scripts/*.mjs|py` are one-off fixes/migrations, not part of the daily system.
