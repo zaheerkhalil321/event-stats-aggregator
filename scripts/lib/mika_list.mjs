@@ -83,6 +83,8 @@ export function timeToSeconds(t) {
   return m[3] !== undefined ? (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) : (+m[1]) * 60 + (+m[2]);
 }
 
+const TEAM_FAMILIES = new Set(['doubles', 'pro_doubles', 'relay']);
+
 const WAVE_FAMILIES = { H: 'single', HPRO: 'pro', HD: 'doubles', HDP: 'pro_doubles', HMR: 'relay', HA: 'adaptive' };
 
 export function waveFamily(waveVal) {
@@ -164,7 +166,7 @@ export function pickRaceGroup(groupsBySlug, race, preferredSlug) {
  *   4. same family + same name, for athletes without a finish time (DNF)
  * Items whose idp already belongs to another row of the race are ignored.
  */
-export function matchItemsToRows(items, rows, existingIdps = new Set()) {
+export function matchItemsToRows(items, rows, existingIdps = new Set(), { teamNames = false } = {}) {
   const taken = new Set([...existingIdps].map(baseIdp));
   const freeItems = dedupeItems(items)
     .filter((it) => !taken.has(baseIdp(it.idp)))
@@ -179,7 +181,7 @@ export function matchItemsToRows(items, rows, existingIdps = new Set()) {
     usedRows.add(row.id);
     usedItems.add(item);
     usedIdps.add(item.idp); // items are deduped by base idp, so the raw idp is unique here
-    matches.push({ id: row.id, idp: item.idp, event: item.event, via });
+    matches.push({ id: row.id, idp: item.idp, event: item.event, via, time: item.time ?? null });
   };
 
   const uniqueIndex = (list, keyFn) => {
@@ -229,6 +231,16 @@ export function matchItemsToRows(items, rows, existingIdps = new Set()) {
   }
 
   pass('family+name (no time)', (x) => (x._time === null && x._name ? `${x._family}|${x._name}` : null));
+
+  // 5. Team divisions only (opt-in): the same set of member names, ignoring the finish time. Older imports
+  // gave many doubles teams a wrong time (often one shared time per heat) and wrote names as
+  // "A, A, B, B"; a two-person name set that is unique on both sides is still a safe match.
+  // Only allowed in the race's own named group: in another event the same team may have raced too.
+  if (teamNames) pass('team names (time differs)', (x) => {
+    if (!TEAM_FAMILIES.has(x._family)) return null;
+    const words = [...new Set(String(x._name).split(/[ ,]+/).filter((w) => w.length >= 2))].sort();
+    return words.length >= 3 && String(x._name).includes(',') ? `${x._family}|${words.join(' ')}` : null;
+  });
 
   return matches;
 }

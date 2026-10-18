@@ -221,11 +221,15 @@ async function logRace(raceId, fields) {
 async function writeMatches(matches) {
   for (let i = 0; i < matches.length; i += 200) {
     const chunk = matches.slice(i, i + 200);
-    const statements = chunk.map((m) => ({
-      sql: `UPDATE hyrox_athlete_results SET mika_idp = ?, mika_event = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND (mika_idp IS NULL OR mika_idp = '')`,
-      args: [m.idp, m.event, m.id],
-    }));
+    // A team matched by names despite a different time had a wrong imported time: take mika's.
+    const statements = chunk.map((m) => {
+      const fixTime = m.via === 'team names (time differs)' && /^\d{1,2}:\d{2}:\d{2}$/.test(String(m.time ?? ''));
+      return {
+        sql: `UPDATE hyrox_athlete_results SET mika_idp = ?, mika_event = ?${fixTime ? ', total_time = ?' : ''}, updated_at = CURRENT_TIMESTAMP
+              WHERE id = ? AND (mika_idp IS NULL OR mika_idp = '')`,
+        args: fixTime ? [m.idp, m.event, m.time, m.id] : [m.idp, m.event, m.id],
+      };
+    });
     for (let attempt = 1; ; attempt++) {
       try {
         await client.batch(statements, 'write');
@@ -289,7 +293,7 @@ async function scrapeWave(slug, wave) {
 }
 
 // Pages through one group's waves and matches the listed athletes to the given rows.
-async function scanGroup(slug, group, rows, existingIdps) {
+async function scanGroup(slug, group, rows, existingIdps, { teamNames = false } = {}) {
   const families = new Set(rows.map((r) => divisionFamily(r.division)));
   const wanted = (o) => { const f = waveFamily(o.val); return f === null || families.has(f); };
   let waves = group.options.filter((o) => !isOverallWave(o.val) && wanted(o));
@@ -303,7 +307,7 @@ async function scanGroup(slug, group, rows, existingIdps) {
     : group.options.filter((o) => isOverallWave(o.val) && day.emptyFamilies.has(waveFamily(o.val)));
   const overall = overallWaves.length ? await scrapeWaves(slug, overallWaves) : { items: [], errors: [], complete: true };
   const items = dedupeItems([...day.items, ...overall.items]);
-  const matches = matchItemsToRows(items, rows, existingIdps);
+  const matches = matchItemsToRows(items, rows, existingIdps, { teamNames });
   return {
     items,
     matches,
@@ -351,7 +355,8 @@ async function discoverRace(race) {
   while (pick) {
     const { slug, group } = pick;
     console.log(`   🎯 ${race.id} → "${group.label}" (${slug}, chosen by ${via})`);
-    const r = await scanGroup(slug, group, left, existingIdps);
+    // Team-name matching (wrong imported times) only in the group picked by the race's own name.
+    const r = await scanGroup(slug, group, left, existingIdps, { teamNames: String(via).startsWith('name') });
     if (!IS_TEST && r.matches.length) await writeMatches(r.matches);
     for (const m of r.matches) existingIdps.add(m.idp);
     const byVia = r.matches.reduce((acc, m) => ({ ...acc, [m.via]: (acc[m.via] || 0) + 1 }), {});

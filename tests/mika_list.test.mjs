@@ -118,3 +118,22 @@ describe('mika list-to-database matching', () => {
     assert.deepEqual(matches.map((m) => [m.id, m.idp]), [[9, 'LR3MS4JI5260FF']]);
   });
 });
+
+it('matchItemsToRows: team names match when the imported time is wrong', () => {
+  const items = [
+    { idp: 'X1', event: 'HD_LR3MS4JIA1A', name: 'Aaron Campbell, Ryan McColm', time: '00:58:10' },
+    { idp: 'X2', event: 'HD_LR3MS4JIA1A', name: 'Jack Jones, Ross Marshall', time: '00:59:02' },
+    { idp: 'X3', event: 'HD_LR3MS4JIA1A', name: 'Same Name, Other Person', time: '01:10:00' },
+    { idp: 'X4', event: 'HD_LR3MS4JIA1A', name: 'Same Name, Other Person', time: '01:12:00' },
+  ];
+  const rows = [
+    { id: 1, full_name: 'Ryan McColm, Ryan McColm, Aaron Campbell, Aaron Campbell', division: 'HYROX DOUBLES MEN', total_time: '01:01:48' },
+    { id: 2, full_name: 'Jack Jones, Ross Marshall', division: 'HYROX DOUBLES MEN', total_time: '01:01:48' },
+    { id: 3, full_name: 'Same Name, Other Person', division: 'HYROX DOUBLES MEN', total_time: '01:01:48' },
+    { id: 4, full_name: 'Solo Runner', division: 'HYROX MEN', total_time: '01:01:48' },
+  ];
+  assert.deepEqual(matchItemsToRows(items, rows), []); // off by default
+  const m = matchItemsToRows(items, rows, new Set(), { teamNames: true });
+  assert.deepEqual(m.map((x) => [x.id, x.idp]).sort(), [[1, 'X1'], [2, 'X2']]);
+  assert.equal(m.find((x) => x.id === 1).time, '00:58:10');
+});
