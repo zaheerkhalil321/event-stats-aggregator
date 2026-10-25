@@ -1,5 +1,5 @@
 /**
- * Polite, self-tuning HTTP client for hyrox.r.mikatiming.com.
+ * Polite, self-tuning HTTP client for results.hyrox.com.
  *
  * mika:timing sits behind an AWS load balancer with a rate-based firewall rule: an IP that sends
  * too many requests within a rolling ~5 minute window gets HTTP 403 until its request count drops.

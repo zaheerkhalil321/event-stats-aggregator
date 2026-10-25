@@ -97,7 +97,7 @@ async function getOptgroupsForSeason(seasonSlug) {
     return seasonWavesCache.get(seasonSlug);
   }
 
-  const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
+  const url = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
   try {
     const res = await mika.get(url);
     if (res.status !== 200) {
@@ -482,7 +482,7 @@ async function enrichAthlete(a) {
     for (const wVal of (waves.length > 0 ? waves : [''])) {
       if (mika.pastDeadline()) return null;
       const eventParam = wVal ? `&event=${wVal}` : '';
-      const detailUrl = `https://hyrox.r.mikatiming.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
+      const detailUrl = `https://results.hyrox.com/${sSlug}/?content=detail&idp=${curIdp}${eventParam}`;
       const html = await fetchDetailHtml(detailUrl);
       if (!html) continue;
       lastHtml = html;

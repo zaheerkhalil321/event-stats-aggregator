@@ -74,7 +74,7 @@ async function fetchWithRetry(url, retries = 3) {
 
 // Extract optgroups and options from MikaTiming form
 async function getSeasonEventOptions(seasonSlug) {
-  const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
+  const url = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
   const html = await fetchWithRetry(url);
   const optgroups = [...html.matchAll(/<optgroup\s+label=\"([^\"]+)\">([\s\S]*?)<\/optgroup>/gi)];
   
@@ -129,7 +129,7 @@ async function scrapeOptionAthletes(seasonSlug, eventValue, sexFilter = '') {
   const numResults = 100;
 
   while (page <= 200) { // Safety cap
-    let url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${encodeURIComponent(eventValue)}&num_results=${numResults}&page=${page}&pid=list`;
+    let url = `https://results.hyrox.com/${seasonSlug}/?event=${encodeURIComponent(eventValue)}&num_results=${numResults}&page=${page}&pid=list`;
     if (sexFilter) url += `&search%5Bsex%5D=${encodeURIComponent(sexFilter)}`;
 
     let html;

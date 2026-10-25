@@ -447,7 +447,7 @@ export const KNOWN_2025_TARGETS = [
 
 // Helper: Fetch event options for a given optgroup label from MikaTiming
 async function getOptionsForOptgroup(season, optgroupLabel) {
-  const url = `https://hyrox.r.mikatiming.com/${season}/?pid=list`;
+  const url = `https://results.hyrox.com/${season}/?pid=list`;
   const res = await fetch(url, { headers: { 'User-Agent': UA } });
   const html = await res.text();
 
@@ -471,7 +471,7 @@ async function getOptionsForOptgroup(season, optgroupLabel) {
 
 // Helper: Fetch event options for a given base from MikaTiming sonstige
 async function getOptionsForBase(season, base) {
-  const url = `https://hyrox.r.mikatiming.com/${season}/?pid=list`;
+  const url = `https://results.hyrox.com/${season}/?pid=list`;
   const res = await fetch(url, { headers: { 'User-Agent': UA } });
   const html = await res.text();
   const sonstigeMatch = html.match(/<optgroup[^>]*label=\"sonstige\"[^>]*>([\s\S]*?)<\/optgroup>/i);
@@ -491,7 +491,7 @@ async function scrapeOptionAthletes(season, eventValue, sexFilter, raceId, divis
   const numResults = 100;
 
   while (page <= 250) {
-    let url = `https://hyrox.r.mikatiming.com/${season}/?event=${encodeURIComponent(eventValue)}&num_results=${numResults}&page=${page}&pid=list`;
+    let url = `https://results.hyrox.com/${season}/?event=${encodeURIComponent(eventValue)}&num_results=${numResults}&page=${page}&pid=list`;
     if (sexFilter) url += `&search%5Bsex%5D=${encodeURIComponent(sexFilter)}`;
 
     let html = '';

@@ -1,6 +1,6 @@
 # event-stats-aggregator
 
-Scrapes HYROX results from mika:timing (hyrox.r.mikatiming.com) into a self-hosted libSQL (sqld)
+Scrapes HYROX results from mika:timing (results.hyrox.com; the old host hyrox.r.mikatiming.com answers 403 to everyone since ~2026-10-21) into a self-hosted libSQL (sqld)
 database on a DigitalOcean VPS, served at https://db.hyroxresultsapi.com. Env vars keep the old
 names: `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (see `.env`; never print the token).
 

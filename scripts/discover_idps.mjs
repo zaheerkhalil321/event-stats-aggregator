@@ -55,7 +55,7 @@ const WAVE_CONCURRENCY = 4;
 const SEASON_SLUGS = ['season-9', 'season-8', 'season-7', 'season-6', 'season-5', 'season-4', 'season-3', 'season-2'];
 // A race group is only trusted when its first list page contains at least this many of the race's athletes.
 const PROBE_MIN_HITS = 10;
-const BASE = 'https://hyrox.r.mikatiming.com';
+const BASE = 'https://results.hyrox.com';
 
 const mika = createMikaClient({
   rate: parseFloat(getArg('rate', '2')),

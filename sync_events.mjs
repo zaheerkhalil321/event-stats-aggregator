@@ -2,7 +2,7 @@
 /**
  * scripts/sync_hyrox.mjs â€” RoxDay Full HYROX Data Pipeline (Playwright Edition)
  * =================================================================================
- * Uses a real headless browser (Playwright/Chromium) to scrape hyrox.r.mikatiming.com.
+ * Uses a real headless browser (Playwright/Chromium) to scrape results.hyrox.com.
  * This bypasses Cloudflare/bot protection and handles JavaScript-rendered content.
  *
  * Scrapes:
@@ -194,7 +194,7 @@ async function runQuery(sql, retries = 3, delayMs = 1500) {
 // Base URL for a season
 // ─────────────────────────────────────────────────────────────────────────────
 function seasonBaseUrl(seasonSlug) {
-  return `https://hyrox.r.mikatiming.com/${seasonSlug}/`;
+  return `https://results.hyrox.com/${seasonSlug}/`;
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -232,7 +232,7 @@ function parseAthletes(html, raceId, division, gender, seasonSlug, rawDropdownNa
     const cleanHref = rawDetailHref.startsWith('/') ? rawDetailHref.slice(1) : rawDetailHref;
     let detailUrl = rawDetailHref.startsWith('http')
       ? rawDetailHref
-      : `https://hyrox.r.mikatiming.com/${slug}/${cleanHref}`;
+      : `https://results.hyrox.com/${slug}/${cleanHref}`;
 
     if (!detailUrl.includes('event_main_group=') && rawDropdownName) {
       detailUrl += (detailUrl.includes('?') ? '&' : '?') + `event_main_group=${encodeURIComponent(rawDropdownName)}`;
@@ -372,7 +372,7 @@ function parseSplits(html) {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) {
   const athletes = [];
-  const listUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
+  const listUrl = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
   let targetPages = maxPages || 99999;
   let totalNumAthletes = 0;
   let lastPageSignature = '';
@@ -579,7 +579,7 @@ async function scrapeDivisionLeaderboard(page, seasonSlug, race, div, maxPages) 
                       }
                     } else {
                       // Page 2+: Direct URL navigation (Bypasses button clicking & DOM lag entirely)
-                      const directUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex && div.sex !== '%' ? `&search[sex]=${div.sex}` : '');
+                      const directUrl = `https://results.hyrox.com/${seasonSlug}/?page=${waveP}&event=${waveValue}&pid=list` + (div.sex && div.sex !== '%' ? `&search[sex]=${div.sex}` : '');
 
                       // Fast HTTP fetch attempt (takes ~300ms, 0 MB memory)
                       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1240,7 +1240,7 @@ const MASTER_RACE_DATES = {
 // Helper: Dynamically discover official races from site
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
-  const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
+  const url = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForSelector('select[name="event"] optgroup, select[name="event_main_group"]', { state: 'attached', timeout: 15000 }).catch(() => { });
 
@@ -1449,7 +1449,7 @@ async function main() {
       console.log(`ðŸ—“ï¸  Season: ${season.label} (${season.slug})`);
       console.log('â”€'.repeat(60));
 
-      console.log(`ðŸ” Discovering official races from hyrox.r.mikatiming.com/${season.slug}...`);
+      console.log(`ðŸ” Discovering official races from results.hyrox.com/${season.slug}...`);
       const allSeasonRaces = await discoverOfficialRaces(page, season.slug, season.label);
       let seasonRaces = allSeasonRaces.filter(r => r.status === 'completed');
       
@@ -1512,7 +1512,7 @@ async function main() {
             }, { rawDropdownName: race.rawDropdownName }).catch(() => []);
 
             for (const optVal of candidateOpts) {
-              await page.goto(`https://hyrox.r.mikatiming.com/${season.slug}/?event=${optVal}&pid=list&num_results=1`, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+              await page.goto(`https://results.hyrox.com/${season.slug}/?event=${optVal}&pid=list&num_results=1`, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
               const count = await page.evaluate(() => document.querySelectorAll('li.list-group-item:not(.list-group-header)').length).catch(() => 0);
               if (count > 0) {
                 console.log(`   🔥 Active results found on Mika Timing! Auto-promoting "${race.name}" from upcoming to completed.`);

@@ -184,7 +184,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
   let maxPages = 50;
 
   for (let p = 1; p <= maxPages; p++) {
-    const url = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100${sexParam}&page=${p}`;
+    const url = `https://results.hyrox.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100${sexParam}&page=${p}`;
     try {
       await mikaGoto(page, url, { waitUntil: 'domcontentloaded', timeout: 15000 });
       await sleep(1000);
@@ -226,7 +226,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
 
           const href = link.getAttribute('href') || '';
           const cleanHref = href.startsWith('/') ? href.slice(1) : href;
-          const detailUrl = href.startsWith('http') ? href : `https://hyrox.r.mikatiming.com/${sSlug}/${cleanHref}`;
+          const detailUrl = href.startsWith('http') ? href : `https://results.hyrox.com/${sSlug}/${cleanHref}`;
           const idpMatch = href.match(/idp=([A-Za-z0-9_]+)/);
           const mikaIdp = idpMatch ? idpMatch[1] : null;
 
@@ -820,7 +820,7 @@ async function main() {
     console.log(`📊 Loaded database state for ${existingRacesMap.size} existing races.`);
 
     const seasonSlug = 'season-9';
-    const listUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?pid=list`;
+    const listUrl = `https://results.hyrox.com/${seasonSlug}/?pid=list`;
     await mikaGoto(page, listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForSelector('select[name="event"]', { timeout: 10000 });
 
@@ -896,7 +896,7 @@ async function main() {
       const probeOpt = activeOptions[0];
       let hasResults = false;
       try {
-        const probeUrl = `https://hyrox.r.mikatiming.com/${seasonSlug}/?event=${probeOpt.val}&pid=list&num_results=1`;
+        const probeUrl = `https://results.hyrox.com/${seasonSlug}/?event=${probeOpt.val}&pid=list&num_results=1`;
         await mikaGoto(page, probeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
         hasResults = await page.evaluate(() => 
           document.querySelectorAll('li.list-group-item a[href*="content=detail"]').length > 0
