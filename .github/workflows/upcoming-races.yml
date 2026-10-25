@@ -1,0 +1,46 @@
+name: 📅 Upcoming Races Calendar
+
+# Reads the official season calendar (https://hyrox.com/find-my-race/, one request, allowed by
+# robots.txt) once a week and keeps hyrox_races in step: real dates, new upcoming races, no
+# placeholder rows. Every day it only refreshes race statuses by date (upcoming → live →
+# completed), which needs no web request.
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'   # Monday 03:17 UTC: full calendar sync
+    - cron: '7 0 * * *'    # daily 00:07 UTC: statuses only
+  workflow_dispatch:
+    inputs:
+      status_only:
+        description: 'Only refresh statuses by date (no calendar request)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: upcoming-races
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  calendar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Sync calendar / statuses
+        run: |
+          if [ "${{ github.event.schedule }}" = "7 0 * * *" ] || [ "${{ inputs.status_only }}" = "true" ]; then
+            node sync_upcoming.mjs --status-only --apply
+          else
+            node sync_upcoming.mjs --apply
+          fi
