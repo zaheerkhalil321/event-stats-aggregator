@@ -1,0 +1,98 @@
+name: 🔎 Verify race counts
+
+# Every night: compare the races of the last 21 days with results.hyrox.com, division by division
+# (scripts/verify_race_counts.mjs). Races that miss results are re-synced right away; if a race still
+# misses results afterwards, an issue labelled "data-check" is opened (or updated). When everything
+# matches again, that issue is closed.
+on:
+  schedule:
+    - cron: '41 4 * * *'   # 04:41 UTC, after the overnight race sessions
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'First race date (YYYY-MM-DD, default: 21 days ago)'
+        required: false
+        default: ''
+      race:
+        description: 'Only races whose label contains this text (e.g. Istanbul)'
+        required: false
+        default: ''
+      fix:
+        description: 'Re-sync races that miss results'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: verify-counts
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+
+      - name: Compare with results.hyrox.com (and re-sync what is missing)
+        id: verify
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          IN_FROM: ${{ github.event.inputs.from }}
+          IN_RACE: ${{ github.event.inputs.race }}
+          IN_FIX: ${{ github.event.inputs.fix || 'true' }}
+        run: |
+          ARGS=(--json report.json --markdown report.md)
+          [ -n "$IN_FROM" ] && ARGS+=(--from "$IN_FROM")
+          [ -n "$IN_RACE" ] && ARGS+=(--race "$IN_RACE")
+          [ "$IN_FIX" = "true" ] && ARGS+=(--fix)
+          set +e
+          node scripts/verify_race_counts.mjs "${ARGS[@]}"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          cat report.md >> "$GITHUB_STEP_SUMMARY" || true
+          # 0 = all match, 2 = some races still miss results; anything else is a failure of the check.
+          if [ "$code" != "0" ] && [ "$code" != "2" ]; then exit "$code"; fi
+
+      - name: Open or update the data-check issue
+        if: steps.verify.outputs.exit_code == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create data-check --color D93F0B --description "Database differs from results.hyrox.com" 2>/dev/null || true
+          num=$(gh issue list --label data-check --state open --json number --jq '.[0].number')
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file report.md
+          else
+            gh issue create --title "Race results missing compared with results.hyrox.com" --label data-check --body-file report.md
+          fi
+
+      - name: Close the data-check issue when everything matches
+        if: steps.verify.outputs.exit_code == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for num in $(gh issue list --label data-check --state open --json number --jq '.[].number'); do
+            gh issue close "$num" --comment "All checked races match results.hyrox.com again ($(date -u +%F))."
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-report
+          path: |
+            report.json
+            report.md
+          if-no-files-found: ignore

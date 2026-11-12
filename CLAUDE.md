@@ -12,6 +12,9 @@ names: `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (see `.env`; never print the to
      race replay, team members). Stops at `--max-db-mb` (workflow input, default 3000).
 - `.github/workflows/live-sync.yml` → `sync_live.mjs` (Playwright, hourly via Upstash, gated by `check_active_today.mjs`).
 - `.github/workflows/pipeline.yml` → `sync_events.mjs` (Monday calendar/races).
+- `.github/workflows/verify-counts.yml` → `scripts/verify_race_counts.mjs` (nightly 04:41 UTC): compares the
+  last 21 days of races with results.hyrox.com per division, re-syncs races that miss results and opens/updates
+  a `data-check` issue if any still do. Run it locally with `--race <text>` or `--from <date>` for an audit.
 - Most other `scripts/*.mjs|py` are one-off fixes/migrations, not part of the daily system.
 
 ## mika:timing rules (important)
@@ -19,7 +22,9 @@ names: `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (see `.env`; never print the to
   first request). Scrape only from GitHub runners or a home IP.
 - Every mika request must go through `scripts/lib/mika_http.mjs` (`get()` / `paced()`): self-tuning
   pacing, waits out 403s. Never add unpaced fetch/page.goto loops.
-- List-page parsing and matching: `scripts/lib/mika_list.mjs`. Detail-row SQL: `scripts/lib/athlete_update_sql.mjs`
+- List-page parsing and matching: `scripts/lib/mika_list.mjs`. A race's waves can also sit in the catch-all "sonstige"
+  group (matched by the wave code after the last "_", `extraWavesFor`); "Overall" and "ALL" waves repeat other
+  waves and are skipped (`isOverallWave`). Detail-row SQL: `scripts/lib/athlete_update_sql.mjs`
   (never overwrite existing values with NULL).
 
 ## VPS (root@157.230.243.98, SSH key only)

@@ -260,6 +260,13 @@ export function extraWavesFor(group, sonstige) {
   return (sonstige.options ?? []).filter((o) => own.has(suffix(o.val)) && !have.has(o.val));
 }
 
+/** Division label the live scraper stores for a wave and sex ("HYROX DOUBLES - Sunday", "X" -> "HYROX DOUBLES MIXED"). */
+export function divisionLabel(waveText, sex) {
+  const base = String(waveText ?? '').replace(/\s*-\s*(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i, '').trim();
+  const suffix = sex === 'M' ? ' MEN' : sex === 'W' ? ' WOMEN' : ' MIXED';
+  return `${base}${suffix}`.toUpperCase().trim();
+}
+
 const PLACEHOLDER_DATE = /-12-31$/; // races registered without a known date get Dec 31
 
 /**

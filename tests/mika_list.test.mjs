@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace, isOverallWave, extraWavesFor } from '../scripts/lib/mika_list.mjs';
+import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace, isOverallWave, extraWavesFor, divisionLabel } from '../scripts/lib/mika_list.mjs';
 
 const item = (idp, name, time, event = 'H_LR3MS4JI1632', place = 1) => `
 <li class="list-group-item row">
@@ -206,5 +206,14 @@ describe('extraWavesFor', () => {
   it('adds nothing without a sonstige group or a match', () => {
     assert.deepEqual(extraWavesFor(istanbul, null), []);
     assert.deepEqual(extraWavesFor({ label: 'x', options: [{ text: 'a', val: 'H_ZZZ' }] }, sonstige), []);
+  });
+});
+
+describe('divisionLabel', () => {
+  it('matches the labels live sync stores', () => {
+    assert.equal(divisionLabel('HYROX DOUBLES - Sunday', 'X'), 'HYROX DOUBLES MIXED');
+    assert.equal(divisionLabel('HYROX PRO', 'W'), 'HYROX PRO WOMEN');
+    assert.equal(divisionLabel('HYROX - Saturday', 'M'), 'HYROX MEN');
+    assert.equal(divisionLabel('HYROX TEAM RELAY', 'M'), 'HYROX TEAM RELAY MEN');
   });
 });
