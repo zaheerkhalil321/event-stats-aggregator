@@ -25,7 +25,7 @@ import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
-import { isOverallWave, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { extraWavesFor, isOverallWave, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 
 dotenv.config();
 
@@ -863,7 +863,7 @@ async function main() {
     await mikaGoto(page, listUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForSelector('select[name="event"]', { timeout: 10000 });
 
-    const allOptgroups = await page.evaluate(() => {
+    const rawOptgroups = await page.evaluate(() => {
       const sel = document.querySelector('select[name="event"]');
       if (!sel) return [];
       const ogs = Array.from(sel.querySelectorAll('optgroup'));
@@ -873,8 +873,12 @@ async function main() {
           text: o.textContent.trim(),
           val: o.value
         }))
-      })).filter(g => g.label && !g.label.toLowerCase().includes('sonstige'));
+      })).filter(g => g.label);
     });
+    // "sonstige" (other) is not a race: mika parks some races' waves there. They are added to their
+    // race below (extraWavesFor), so it is taken out of the list of races.
+    const sonstige = rawOptgroups.find(g => g.label.toLowerCase().includes('sonstige'));
+    const allOptgroups = rawOptgroups.filter(g => g !== sonstige);
 
     console.log(`📋 Discovered ${allOptgroups.length} Season 9 event groups.`);
 
@@ -899,7 +903,11 @@ async function main() {
       console.log(`🔴 EVENT: ${group.label}`);
       console.log('═'.repeat(60));
 
-      const activeOptions = group.options.filter(o => {
+      const extraWaves = extraWavesFor(group, sonstige);
+      if (extraWaves.length) {
+        console.log(`   ➕ ${extraWaves.length} wave(s) of this race listed under "sonstige": ${extraWaves.map(o => o.text).join(', ')}`);
+      }
+      const activeOptions = [...group.options, ...extraWaves].filter(o => {
         const t = o.text.toUpperCase();
         return !t.includes('OVERALL') && t !== 'ALL' && !isOverallWave(o.val);
       });

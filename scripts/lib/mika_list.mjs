@@ -247,6 +247,19 @@ export function matchItemsToRows(items, rows, existingIdps = new Set(), { teamNa
   return matches;
 }
 
+/**
+ * Waves of a race that mika lists in the catch-all "sonstige" group instead of the race's own
+ * group (Istanbul 2026 doubles: HD_LR3MS4JI1723 while the group holds H_LR3MS4JI1723). A wave
+ * belongs to the race when its code after the last "_" matches one of the group's waves.
+ */
+export function extraWavesFor(group, sonstige) {
+  if (!group || !sonstige) return [];
+  const suffix = (val) => String(val ?? '').split('_').pop();
+  const own = new Set((group.options ?? []).map((o) => suffix(o.val)).filter(Boolean));
+  const have = new Set((group.options ?? []).map((o) => o.val));
+  return (sonstige.options ?? []).filter((o) => own.has(suffix(o.val)) && !have.has(o.val));
+}
+
 const PLACEHOLDER_DATE = /-12-31$/; // races registered without a known date get Dec 31
 
 /**

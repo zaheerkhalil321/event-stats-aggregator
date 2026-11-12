@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace, isOverallWave } from '../scripts/lib/mika_list.mjs';
+import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace, isOverallWave, extraWavesFor } from '../scripts/lib/mika_list.mjs';
 
 const item = (idp, name, time, event = 'H_LR3MS4JI1632', place = 1) => `
 <li class="list-group-item row">
@@ -187,5 +187,24 @@ describe('isOverallWave', () => {
   it('keeps real waves', () => {
     assert.equal(isOverallWave('H_LR3MS4JI1803'), false);
     assert.equal(isOverallWave('HD_LR3MS4JI17A0'), false);
+  });
+});
+
+describe('extraWavesFor', () => {
+  const istanbul = { label: '2026 Istanbul', options: [
+    { text: 'HYROX PRO', val: 'HPRO_LR3MS4JI1722' },
+    { text: 'HYROX - Sunday', val: 'H_LR3MS4JI1723' },
+  ] };
+  const sonstige = { label: 'sonstige', options: [
+    { text: 'HYROX DOUBLES', val: 'HD_LR3MS4JI1723' },
+    { text: 'HYROX ADAPTIVE', val: 'HA_LR3MS4JI1722' },
+    { text: 'HYROX DOUBLES', val: 'HD_LR3MS4JI173A' },
+  ] };
+  it('adds the sonstige waves whose code matches one of the race waves', () => {
+    assert.deepEqual(extraWavesFor(istanbul, sonstige).map((o) => o.val), ['HD_LR3MS4JI1723', 'HA_LR3MS4JI1722']);
+  });
+  it('adds nothing without a sonstige group or a match', () => {
+    assert.deepEqual(extraWavesFor(istanbul, null), []);
+    assert.deepEqual(extraWavesFor({ label: 'x', options: [{ text: 'a', val: 'H_ZZZ' }] }, sonstige), []);
   });
 });
