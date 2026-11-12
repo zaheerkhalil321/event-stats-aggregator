@@ -25,7 +25,7 @@ import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
-import { assignDistinctNames, extraWavesFor, isOverallWave, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { assignDistinctNames, extraWavesFor, isOverallWave, normalizeFinishTime, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 
 dotenv.config();
 
@@ -253,7 +253,7 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
 
       if (listed === 0) break;
 
-      athletes.push(...pageAthletes);
+      athletes.push(...pageAthletes.map((a) => ({ ...a, total_time: normalizeFinishTime(a.total_time) })));
       if (pageAthletes.length < listed) {
         console.log(`\n      ⚠️ [${divisionLabel}] page ${p}: ${listed - pageAthletes.length} result(s) without a name skipped`);
       }

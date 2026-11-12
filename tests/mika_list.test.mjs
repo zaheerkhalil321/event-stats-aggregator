@@ -270,3 +270,21 @@ test('assignDistinctNames: a stored row without idp is not treated as another at
   );
   assert.equal(out[0].full_name, 'Rahul Shah');
 });
+
+// ---------- normalizeFinishTime ----------
+import { normalizeFinishTime } from '../scripts/lib/mika_list.mjs';
+
+test('normalizeFinishTime: Elite 15 cells with label and hundredths', () => {
+  assert.equal(normalizeFinishTime('Finish Times47:54.15'), '00:47:54');
+  assert.equal(normalizeFinishTime('s47:54.15'), '00:47:54');
+});
+test('normalizeFinishTime: normal cells stay HH:MM:SS', () => {
+  assert.equal(normalizeFinishTime('Total01:02:33'), '01:02:33');
+  assert.equal(normalizeFinishTime('00:55:04'), '00:55:04');
+  assert.equal(normalizeFinishTime('1:02:33'), '01:02:33');
+});
+test('normalizeFinishTime: no time keeps the text, empty is null', () => {
+  assert.equal(normalizeFinishTime('DNF'), 'DNF');
+  assert.equal(normalizeFinishTime('  '), null);
+  assert.equal(normalizeFinishTime(undefined), null);
+});

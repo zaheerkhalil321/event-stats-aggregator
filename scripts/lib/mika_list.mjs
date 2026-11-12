@@ -77,6 +77,20 @@ export function normName(s) {
 
 const nameTokens = (s) => new Set(normName(s).split(/[ ,]+/).filter((t) => t.length >= 3));
 
+/**
+ * Finish time from a list page cell, as HH:MM:SS. The cell can carry a label ("Total", "Finish Time",
+ * "Finish Times") and Elite 15 races show hundredths and no hours ("47:54.15" -> "00:47:54").
+ * Text without a time (e.g. "DNF") is returned as it is; an empty cell gives null.
+ */
+export function normalizeFinishTime(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return null;
+  const m = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?/);
+  if (!m) return text.replace(/^(Total|Finish\s*Times?)\s*/i, '').trim() || null;
+  const [h, mm, ss] = m[3] !== undefined ? [m[1], m[2], m[3]] : ['0', m[1], m[2]];
+  return [h, mm, ss].map((v) => v.padStart(2, '0')).join(':');
+}
+
 export function timeToSeconds(t) {
   const m = String(t ?? '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return null;
