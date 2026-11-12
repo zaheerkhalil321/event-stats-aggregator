@@ -25,7 +25,7 @@ import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
-import { resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { isOverallWave, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 
 dotenv.config();
 
@@ -901,7 +901,7 @@ async function main() {
 
       const activeOptions = group.options.filter(o => {
         const t = o.text.toUpperCase();
-        return !t.includes('OVERALL') && !o.val.endsWith('_OVERALL');
+        return !t.includes('OVERALL') && t !== 'ALL' && !isOverallWave(o.val);
       });
 
       if (activeOptions.length === 0) {

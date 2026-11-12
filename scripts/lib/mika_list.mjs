@@ -103,7 +103,9 @@ export function divisionFamily(division) {
 }
 
 // Merged lists: H_BER26_OVERALL, and per-week ones on multi-week events (H_JFK26_OVERALL_1).
-export const isOverallWave = (val) => /_OVERALL(_\d+)?$/i.test(String(val ?? ''));
+// Combined lists that repeat results of the real waves: "... - Overall" (H_MEX26_OVERALL) and
+// "ALL" (ALL__H_HA_HD_LR3MS4JI1802). Reading them stores every athlete a second time.
+export const isOverallWave = (val) => /_OVERALL(_\d+)?$/i.test(String(val ?? '')) || /^ALL__/i.test(String(val ?? ''));
 
 // Merged-list links carry a suffix on the idp (LR3MS4JI517A9D_BER, LR3MS4JI5260FF_JFK_1);
 // mika idps themselves never contain "_", so the athlete is identified by the part before it.

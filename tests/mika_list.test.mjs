@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace } from '../scripts/lib/mika_list.mjs';
+import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace, isOverallWave } from '../scripts/lib/mika_list.mjs';
 
 const item = (idp, name, time, event = 'H_LR3MS4JI1632', place = 1) => `
 <li class="list-group-item row">
@@ -174,5 +174,18 @@ describe('resolveCalendarRace', () => {
     assert.equal(resolveCalendarRace('2026 Atlantis', races, today, '26/27'), null);
     assert.equal(resolveCalendarRace('2025 Dublin', races, today, '26/27'), null);
     assert.equal(resolveCalendarRace('Dublin', races, today, '26/27'), null);
+  });
+});
+
+describe('isOverallWave', () => {
+  it('flags combined lists that repeat other waves', () => {
+    assert.equal(isOverallWave('H_MEX26_OVERALL'), true);
+    assert.equal(isOverallWave('HD_MEX26_OVERALL_2'), true);
+    assert.equal(isOverallWave('ALL__H_HA_HD_LR3MS4JI1802'), true);
+    assert.equal(isOverallWave('ALL__HE_LR3MS4JI179B'), true);
+  });
+  it('keeps real waves', () => {
+    assert.equal(isOverallWave('H_LR3MS4JI1803'), false);
+    assert.equal(isOverallWave('HD_LR3MS4JI17A0'), false);
   });
 });
