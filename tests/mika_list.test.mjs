@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily } from '../scripts/lib/mika_list.mjs';
+import { parseListPage, parseSeasonGroups, pickRaceGroup, matchItemsToRows, dedupeItems, normName, timeToSeconds, waveFamily, divisionFamily, resolveCalendarRace } from '../scripts/lib/mika_list.mjs';
 
 const item = (idp, name, time, event = 'H_LR3MS4JI1632', place = 1) => `
 <li class="list-group-item row">
@@ -136,4 +136,43 @@ it('matchItemsToRows: team names match when the imported time is wrong', () => {
   const m = matchItemsToRows(items, rows, new Set(), { teamNames: true });
   assert.deepEqual(m.map((x) => [x.id, x.idp]).sort(), [[1, 'X1'], [2, 'X2']]);
   assert.equal(m.find((x) => x.id === 1).time, '00:58:10');
+});
+
+describe('resolveCalendarRace', () => {
+  const races = [
+    { id: 'barcelona-2026', name: 'HYROX Barcelona 2026', city: 'Barcelona', date: '2026-05-14', end_date: '2026-05-17', season: '25/26' },
+    { id: 'barcelona-nov-2026', name: 'HYROX Barcelona 2026', city: 'Barcelona', date: '2026-11-11', end_date: '2026-11-15', season: '26/27' },
+    { id: 'dusseldorf-2026', name: 'HYROX Düsseldorf 2026', city: 'Düsseldorf', date: '2026-11-11', end_date: '2026-11-15', season: '26/27' },
+    { id: 'd-sseldorf-2026', name: 'HYROX Düsseldorf 2026', city: 'Düsseldorf', date: '2026-12-31', end_date: '2026-12-31', season: '26/27' },
+    { id: 'dublin-2026', name: 'HYROX Dublin 2026', city: 'Dublin', date: '2026-11-11', end_date: '2026-11-15', season: '26/27' },
+    { id: 'london-2026', name: 'HYROX London 2026', city: 'London', date: '2026-03-20', end_date: '2026-03-22', season: '26/27' },
+    { id: 'london-dec-2026', name: 'HYROX London 2026', city: 'London', date: '2026-12-04', end_date: '2026-12-06', season: '26/27' },
+    { id: 'beijing-2026', name: 'HYROX Beijing 2026', city: 'Beijing', date: '2026-01-10', end_date: '2026-01-11', season: '26/27' },
+    { id: 'beijing-sep-2026', name: 'HYROX Beijing September 2026', city: 'Beijing', date: '2026-09-10', end_date: '2026-09-13', season: '26/27' },
+    { id: 'birmingham-2026', name: 'HYROX Birmingham 2026', city: 'Birmingham', date: '2026-10-27', end_date: '2026-11-01', season: '26/27' },
+    { id: 'birmingham-youngstars-2026', name: 'HYROX Birmingham - Youngstars 2026', city: 'Birmingham - Youngstars', date: '2026-10-31', end_date: '2026-11-01', season: '26/27' },
+  ];
+  const today = '2026-11-12';
+
+  it('picks the November race, not the finished May race of the same city', () => {
+    assert.equal(resolveCalendarRace('2026 Barcelona', races, today, '26/27').id, 'barcelona-nov-2026');
+  });
+  it('matches accented city names and prefers a real date over a placeholder row', () => {
+    assert.equal(resolveCalendarRace('2026 Düsseldorf', races, today, '26/27').id, 'dusseldorf-2026');
+  });
+  it('without a race today, takes the closest date', () => {
+    assert.equal(resolveCalendarRace('2026 London', races, today, '26/27').id, 'london-dec-2026');
+  });
+  it('prefers the main race over a side event of the same city', () => {
+    assert.equal(resolveCalendarRace('2026 Birmingham', races, today, '26/27').id, 'birmingham-2026');
+    assert.equal(resolveCalendarRace('2026 Birmingham', races, '2026-10-31', '26/27').id, 'birmingham-2026');
+  });
+  it('does not count words of the race name such as "September" against it', () => {
+    assert.equal(resolveCalendarRace('2026 Beijing', races, today, '26/27').id, 'beijing-sep-2026');
+  });
+  it('returns null when no calendar race fits', () => {
+    assert.equal(resolveCalendarRace('2026 Atlantis', races, today, '26/27'), null);
+    assert.equal(resolveCalendarRace('2025 Dublin', races, today, '26/27'), null);
+    assert.equal(resolveCalendarRace('Dublin', races, today, '26/27'), null);
+  });
 });

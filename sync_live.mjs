@@ -25,6 +25,7 @@ import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
+import { resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 
 dotenv.config();
 
@@ -181,29 +182,32 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
   else if (sex === 'X') divisionLabel = `${baseLabel} MIXED`;
   divisionLabel = divisionLabel.toUpperCase().trim();
 
-  let maxPages = 50;
+  const MAX_PAGES = 300; // safety stop only; the real end is a page with fewer than 100 rows
+  let shownPages = '?';
 
-  for (let p = 1; p <= maxPages; p++) {
+  for (let p = 1, attempt = 1; p <= MAX_PAGES; ) {
     const url = `https://results.hyrox.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100${sexParam}&page=${p}`;
     try {
       await mikaGoto(page, url, { waitUntil: 'domcontentloaded', timeout: 15000 });
       await sleep(1000);
 
-      // On Page 1, detect total page count from pagination bar to avoid redundant fetches
+      // Page count from the pagination bar, for the progress line only (the bar may not list every page).
       if (p === 1) {
-        maxPages = await page.evaluate(() => {
+        shownPages = await page.evaluate(() => {
           const pageItems = Array.from(document.querySelectorAll('.pages li, .pagination li')).map(p => p.innerText.trim());
           const numPages = pageItems.filter(t => /^\d+$/.test(t));
           return numPages.length ? Math.max(...numPages.map(Number)) : 1;
         });
       }
 
-      const pageAthletes = await page.evaluate(({ rId, divLabel, genderCode, sSlug }) => {
+      const { list: pageAthletes, listed } = await page.evaluate(({ rId, divLabel, genderCode, sSlug }) => {
         const items = Array.from(document.querySelectorAll('li.list-group-item:not(.list-group-header)'));
         const list = [];
+        let listed = 0; // every result row on the page, including ones skipped below
         for (const item of items) {
           const link = item.querySelector('a[href*="content=detail"]');
           if (!link) continue;
+          listed++;
           const rawFullName = link.textContent?.trim() || '';
           const fullName = rawFullName.replace(/\s*\([A-Za-z]{2,3}\)$/i, '').trim();
           if (!fullName) continue;
@@ -244,18 +248,31 @@ async function scrapeWaveDirect(page, seasonSlug, raceId, waveText, waveVal, sex
             mika_idp: mikaIdp,
           });
         }
-        return list;
+        return { list, listed };
       }, { rId: raceId, divLabel: divisionLabel, genderCode: sex || 'M', sSlug: seasonSlug });
 
-      if (!pageAthletes || pageAthletes.length === 0) break;
+      if (listed === 0) break;
 
       athletes.push(...pageAthletes);
-      process.stdout.write(`      📄 [${divisionLabel}] Page ${p}/${maxPages} (${athletes.length} athletes)\r`);
+      if (pageAthletes.length < listed) {
+        console.log(`\n      ⚠️ [${divisionLabel}] page ${p}: ${listed - pageAthletes.length} result(s) without a name skipped`);
+      }
+      process.stdout.write(`      📄 [${divisionLabel}] Page ${p}/${shownPages} (${athletes.length} athletes)\r`);
 
-      if (pageAthletes.length < 100) break; // Reached last page
+      // Last page: fewer than 100 rows on the page itself. Count the page's rows, not the athletes
+      // kept: one result without a name used to end the wave early (Mexico City 2026 lost 1,100).
+      if (listed < 100) break;
+      p++;
+      attempt = 1;
     } catch (err) {
-      console.warn(`\n      ⚠️ Page ${p} load warning: ${err.message.slice(0, 80)}`);
-      break;
+      console.warn(`\n      ⚠️ Page ${p} load warning (attempt ${attempt}): ${err.message.slice(0, 80)}`);
+      // Retry the same page instead of silently dropping the rest of the wave.
+      if (attempt >= 3) {
+        console.warn(`      ❌ [${divisionLabel}] stopped at page ${p}; the remaining pages are read on the next pass.`);
+        break;
+      }
+      attempt++;
+      await sleep(5000);
     }
   }
 
@@ -595,7 +612,8 @@ function getRaceMetadata(label) {
   const yearMatch = label.match(/^(\d{4})/);
   const year = yearMatch ? yearMatch[1] : '2026';
   const city = clean.trim();
-  const slug = city.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  // Strip accents first: "Düsseldorf" -> "dusseldorf" (not "d-sseldorf").
+  const slug = city.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   
   let id = `${slug}-${year}`;
   if (slug === 'washington-dc') {
@@ -745,14 +763,17 @@ async function updateLiveRaceCount(raceId, raceStartDate, raceEndDate) {
   }
 }
 
+let calendarRaces = []; // all rows of hyrox_races, filled by getExistingRacesMap()
+
 async function getExistingRacesMap() {
   try {
     const res = await runQuery(`
-      SELECT id, status, athletes_count, date, end_date 
+      SELECT id, name, city, country, country_code, status, athletes_count, date, end_date, season
       FROM hyrox_races;
     `);
     const map = new Map();
     if (Array.isArray(res)) {
+      calendarRaces = res;
       for (const r of res) {
         map.set(r.id, {
           status: r.status,
@@ -766,6 +787,24 @@ async function getExistingRacesMap() {
   } catch (err) {
     return new Map();
   }
+}
+
+// The race a season-page group belongs to: the calendar race when there is one (right id, dates
+// and country), otherwise a new race built from the label.
+function raceForGroup(label) {
+  const today = new Date().toISOString().slice(0, 10);
+  const r = resolveCalendarRace(label, calendarRaces, today, '26/27');
+  if (!r) return getRaceMetadata(label);
+  return {
+    id: r.id,
+    name: r.name,
+    city: r.city,
+    country: r.country,
+    country_code: r.country_code,
+    date: String(r.date).slice(0, 10),
+    end_date: r.end_date ? String(r.end_date).slice(0, 10) : String(r.date).slice(0, 10),
+    season: r.season || '26/27',
+  };
 }
 
 async function getRaceDivisionCounts(raceId) {
@@ -870,7 +909,8 @@ async function main() {
         continue;
       }
 
-      const race = getRaceMetadata(group.label);
+      const race = raceForGroup(group.label);
+      console.log(`   🔗 "${group.label}" -> ${race.id} (${race.date} to ${race.end_date})`);
       const isPastRace = race.end_date && race.end_date < new Date().toISOString().slice(0, 10);
       const isFutureRace = race.date && race.date > new Date().toISOString().slice(0, 10);
       const isTargetingSpecificRace = FORCE_RACE && FORCE_RACE.toLowerCase() !== 'all';

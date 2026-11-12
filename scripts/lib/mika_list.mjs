@@ -244,3 +244,45 @@ export function matchItemsToRows(items, rows, existingIdps = new Set(), { teamNa
 
   return matches;
 }
+
+const PLACEHOLDER_DATE = /-12-31$/; // races registered without a known date get Dec 31
+
+/**
+ * The calendar race (row of hyrox_races) that a live season-page group such as "2026 Düsseldorf"
+ * belongs to. Cities hold several races a year ("2026 Barcelona" is both May and November), so
+ * among the races of that season whose name/city/id contain every word of the label it prefers:
+ * the race running today, then races with a real date, then races without extra words (the main
+ * race over e.g. "Birmingham - Youngstars"), then the date closest to today.
+ * Returns null when no race fits.
+ */
+export function resolveCalendarRace(label, races, today, season) {
+  const m = String(label ?? '').match(/^(\d{4})\s+(.*)$/);
+  if (!m) return null;
+  const words = labelWords(m[2]);
+  if (!words.length) return null;
+  const dayMs = (d) => Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`);
+  const candidates = races.filter((r) => {
+    if (season && r.season && r.season !== season) return false;
+    if (String(r.date ?? '').slice(0, 4) !== m[1]) return false;
+    const raceWords = new Set([...labelWords(r.name), ...labelWords(r.city), ...labelWords(r.id)]);
+    return words.every((w) => raceWords.has(w));
+  });
+  if (!candidates.length) return null;
+  const labelSet = new Set(words);
+  const rank = (r) => {
+    const start = String(r.date ?? '');
+    const end = String(r.end_date ?? r.date ?? '');
+    const runningToday = start <= today && today <= end;
+    const placeholder = PLACEHOLDER_DATE.test(start);
+    // Words of the race city that the label does not have, e.g. "Birmingham - Youngstars" for the
+    // label "Birmingham": the side event loses against the main race. (Only the city: names carry
+    // words like "September" that say nothing about which race it is.)
+    const extra = new Set(labelWords(r.city).filter((w) => !labelSet.has(w))).size;
+    return [runningToday ? 0 : 1, placeholder ? 1 : 0, extra, Math.abs(dayMs(start) - dayMs(today)) || 0];
+  };
+  return [...candidates].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] || ra[3] - rb[3];
+  })[0];
+}
