@@ -30,7 +30,13 @@ names: `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (see `.env`; never print the to
 ## VPS (root@157.230.243.98, SSH key only)
 - sqld on 127.0.0.1:8080 behind Caddy (HTTPS), JWT auth (`/etc/sqld`), ufw allows 22/80/443, fail2ban.
 - Disk is small (8.7 GB). sqld replication snapshots are trimmed every 6h by `/usr/local/bin/sqld-trim-snapshots.sh`.
-- Nightly encrypted backup to Google Drive (`/usr/local/bin/hyrox-db-backup.sh`, rclone remote `gcrypt`).
+- Nightly encrypted full backup to Google Drive (`/usr/local/bin/hyrox-db-backup.sh`, rclone remote `gcrypt`, 22:00 UTC,
+  keeps 8 days; dumps to /var/tmp first and retries the upload). Hourly backup of the account tables (`auth_*`,
+  `api_keys`, `entitlements`, usage) to `gcrypt:accounts/` (`hyrox-accounts-backup.sh`, keeps 7 days).
+- `hyrox-vps-status.sh` writes disk/DB/backup health every 10 min to https://db.hyroxresultsapi.com/vps-status.json
+  (Caddy serves it); `.github/workflows/vps-health.yml` reads it hourly and opens a `vps-health` issue when needed.
+- Copies of these scripts live in `ops/vps/`; edit there and copy to `/usr/local/bin/` on the VPS.
+- Login (Better Auth `auth_*` tables) and customer data share this database with the race results.
 
 ## Working here
 - `npm test` (node --test, 58+ tests). Read-only DB checks: small node scripts with `@libsql/client` + dotenv.

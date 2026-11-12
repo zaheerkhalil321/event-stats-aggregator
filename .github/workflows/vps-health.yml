@@ -1,0 +1,86 @@
+name: 🩺 VPS health
+
+# Every hour: reads the VPS status file (written every 10 minutes by /usr/local/bin/hyrox-vps-status.sh,
+# served by Caddy) and opens an issue labelled "vps-health" when the disk is filling up, the database
+# does not answer, or a backup is overdue. Closes the issue when everything is fine again.
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: vps-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the VPS status
+        id: status
+        run: |
+          set +e
+          body=$(curl -fsS -m 20 https://db.hyroxresultsapi.com/vps-status.json)
+          code=$?
+          set -e
+          problems=()
+          if [ "$code" != "0" ] || [ -z "$body" ]; then
+            problems+=("The VPS status file could not be read (the VPS or Caddy may be down).")
+          else
+            echo "$body" | jq .
+            now=$(date -u +%s)
+            age() { [ -z "$1" ] && echo 999999999 || echo $(( now - $(date -u -d "$1" +%s) )); }
+            disk=$(echo "$body" | jq -r .disk_used_pct)
+            free=$(echo "$body" | jq -r .disk_free_mb)
+            up=$(echo "$body" | jq -r .db_up)
+            updated=$(echo "$body" | jq -r .updated_at)
+            full=$(echo "$body" | jq -r .full_backup_last_ok)
+            acct=$(echo "$body" | jq -r .accounts_backup_last_ok)
+            [ "$disk" -ge 85 ] && problems+=("Disk is ${disk}% full (${free} MB free). Free space before the database stops writing.")
+            [ "$up" != "true" ] && problems+=("The database (sqld) does not answer on the VPS.")
+            [ "$(age "$updated")" -gt 1800 ] && problems+=("The status file is older than 30 minutes (last update ${updated}); the status cron may have stopped.")
+            [ "$(age "$full")" -gt 129600 ] && problems+=("No full backup for more than 36 hours (last good one: ${full:-never}).")
+            [ "$(age "$acct")" -gt 10800 ] && problems+=("No account backup for more than 3 hours (last good one: ${acct:-never}).")
+          fi
+          {
+            echo "count=${#problems[@]}"
+            echo "report<<EOF"
+            echo "VPS check on $(date -u '+%F %H:%M') UTC:"
+            echo
+            for p in "${problems[@]}"; do echo "- $p"; done
+            echo
+            echo "Status file: https://db.hyroxresultsapi.com/vps-status.json"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the vps-health issue
+        if: steps.status.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.status.outputs.report }}
+        run: |
+          gh label create vps-health --repo "$GITHUB_REPOSITORY" --color B60205 --description "VPS disk, database or backups need attention" 2>/dev/null || true
+          num=$(gh issue list --repo "$GITHUB_REPOSITORY" --label vps-health --state open --json number --jq '.[0].number')
+          if [ -n "$num" ]; then
+            # At most one reminder a day while the problem lasts.
+            updated=$(gh issue view "$num" --repo "$GITHUB_REPOSITORY" --json updatedAt --jq .updatedAt)
+            if [ $(( $(date -u +%s) - $(date -u -d "$updated" +%s) )) -gt 86000 ]; then
+              gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$REPORT"
+            fi
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "VPS needs attention" --label vps-health --body "$REPORT"
+          fi
+
+      - name: Close the vps-health issue when all is well
+        if: steps.status.outputs.count == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for num in $(gh issue list --repo "$GITHUB_REPOSITORY" --label vps-health --state open --json number --jq '.[].number'); do
+            gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "VPS is fine again ($(date -u +%F' '%H:%M) UTC)."
+          done
