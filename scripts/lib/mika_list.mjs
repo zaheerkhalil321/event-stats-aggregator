@@ -308,3 +308,41 @@ export function resolveCalendarRace(label, races, today, season) {
     return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] || ra[3] - rb[3];
   })[0];
 }
+
+// ---------- athletes who share a name ----------
+// The database keeps one row per (race, name, division). When two different athletes (different
+// mika_idp) have the same name in one division, the later one is stored as "Name (bib 123)", or as
+// "Name (#585839)" (end of the mika id) when the list page has no bib, so neither overwrites the
+// other. Names stay stable between syncs: an athlete already stored under a name keeps it.
+
+const nameKey = (name, division) => `${String(name).trim().toLowerCase()}|${division}`;
+const baseName = (name) => String(name).replace(/ \((?:bib [^)]*|#[^)]*)\)$/, '');
+
+/**
+ * @param athletes  scraped rows ({ full_name, division, mika_idp, bib_number })
+ * @param stored    { nameOfIdp: Map(idp -> stored full_name), ownerOfName: Map(nameKey -> stored idp or null) }
+ * @returns the same rows, with full_name changed where needed
+ */
+export function assignDistinctNames(athletes, stored = {}) {
+  const nameOfIdp = stored.nameOfIdp ?? new Map();
+  const ownerOfName = new Map(stored.ownerOfName ?? []);
+  const taken = (key, idp) => ownerOfName.has(key) && ownerOfName.get(key) != null && ownerOfName.get(key) !== idp;
+  return athletes.map((a) => {
+    if (!a.mika_idp || !a.full_name) return a;
+    const prev = nameOfIdp.get(a.mika_idp);
+    // Already stored: keep its name when it is this name or a "(bib …)" variant of it.
+    if (prev && baseName(prev).toLowerCase() === a.full_name.trim().toLowerCase()) {
+      ownerOfName.set(nameKey(prev, a.division), a.mika_idp);
+      return prev === a.full_name ? a : { ...a, full_name: prev };
+    }
+    const key = nameKey(a.full_name, a.division);
+    if (!taken(key, a.mika_idp)) {
+      ownerOfName.set(key, a.mika_idp);
+      return a;
+    }
+    const tag = a.bib_number ? `bib ${a.bib_number}` : `#${a.mika_idp.slice(-6)}`;
+    const name = `${a.full_name.trim()} (${tag})`;
+    ownerOfName.set(nameKey(name, a.division), a.mika_idp);
+    return { ...a, full_name: name };
+  });
+}

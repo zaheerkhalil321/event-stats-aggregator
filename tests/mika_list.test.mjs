@@ -217,3 +217,56 @@ describe('divisionLabel', () => {
     assert.equal(divisionLabel('HYROX TEAM RELAY', 'M'), 'HYROX TEAM RELAY MEN');
   });
 });
+
+// ---------- assignDistinctNames ----------
+import { it as test } from "node:test";
+import { assignDistinctNames } from '../scripts/lib/mika_list.mjs';
+
+test('assignDistinctNames: two athletes with one name in one batch both stay', () => {
+  const out = assignDistinctNames([
+    { full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'A1', bib_number: '101' },
+    { full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'B2', bib_number: '202' },
+  ]);
+  assert.deepEqual(out.map((a) => a.full_name), ['Rahul Shah', 'Rahul Shah (bib 202)']);
+});
+
+test('assignDistinctNames: a later wave does not overwrite the stored athlete', () => {
+  const out = assignDistinctNames(
+    [{ full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'B2', bib_number: '202' }],
+    { nameOfIdp: new Map([['A1', 'Rahul Shah']]), ownerOfName: new Map([['rahul shah|HYROX MEN', 'A1']]) },
+  );
+  assert.equal(out[0].full_name, 'Rahul Shah (bib 202)');
+});
+
+test('assignDistinctNames: names stay the same on the next sync', () => {
+  const stored = {
+    nameOfIdp: new Map([['A1', 'Rahul Shah'], ['B2', 'Rahul Shah (bib 202)']]),
+    ownerOfName: new Map([['rahul shah|HYROX MEN', 'A1'], ['rahul shah (bib 202)|HYROX MEN', 'B2']]),
+  };
+  // Even when the second athlete comes first this time.
+  const out = assignDistinctNames([
+    { full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'B2', bib_number: '202' },
+    { full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'A1', bib_number: '101' },
+  ], stored);
+  assert.deepEqual(out.map((a) => a.full_name), ['Rahul Shah (bib 202)', 'Rahul Shah']);
+});
+
+test('assignDistinctNames: same athlete, other divisions, rows without idp are left alone', () => {
+  const out = assignDistinctNames(
+    [
+      { full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'A1', bib_number: '101' },
+      { full_name: 'Rahul Shah', division: 'HYROX PRO MEN', mika_idp: 'C3', bib_number: '303' },
+      { full_name: 'Sara Ali', division: 'HYROX WOMEN', mika_idp: null, bib_number: '5' },
+    ],
+    { ownerOfName: new Map([['sara ali|HYROX WOMEN', 'Z9']]) },
+  );
+  assert.deepEqual(out.map((a) => a.full_name), ['Rahul Shah', 'Rahul Shah', 'Sara Ali']);
+});
+
+test('assignDistinctNames: a stored row without idp is not treated as another athlete', () => {
+  const out = assignDistinctNames(
+    [{ full_name: 'Rahul Shah', division: 'HYROX MEN', mika_idp: 'A1', bib_number: '101' }],
+    { ownerOfName: new Map([['rahul shah|HYROX MEN', null]]) },
+  );
+  assert.equal(out[0].full_name, 'Rahul Shah');
+});

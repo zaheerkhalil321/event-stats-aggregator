@@ -25,7 +25,7 @@ import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
-import { extraWavesFor, isOverallWave, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { assignDistinctNames, extraWavesFor, isOverallWave, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 
 dotenv.config();
 
@@ -402,8 +402,37 @@ async function scrapeSplits(page, athlete) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Upsert Athletes to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Two different athletes with one name in one division would share a database row (the later one
+ * overwrote the earlier). Give the later one a "(bib N)" or "(#idp)" name, keeping names already stored.
+ */
+async function separateSameNames(athletes) {
+  const raceId = athletes[0].race_id;
+  const nameOfIdp = new Map();
+  const ownerOfName = new Map();
+  const idps = [...new Set(athletes.map(a => a.mika_idp).filter(Boolean))];
+  const names = [...new Set(athletes.map(a => a.full_name.trim().toLowerCase()))];
+  for (let i = 0; i < idps.length; i += 300) {
+    const rows = await runQuery(`SELECT mika_idp, full_name FROM hyrox_athlete_results
+      WHERE race_id = ${esc(raceId)} AND mika_idp IN (${idps.slice(i, i + 300).map(esc).join(',')})`);
+    for (const r of rows || []) nameOfIdp.set(String(r.mika_idp), String(r.full_name));
+  }
+  for (let i = 0; i < names.length; i += 300) {
+    const rows = await runQuery(`SELECT full_name, division, mika_idp FROM hyrox_athlete_results
+      WHERE race_id = ${esc(raceId)} AND lower(full_name) IN (${names.slice(i, i + 300).map(esc).join(',')})`);
+    for (const r of rows || []) {
+      ownerOfName.set(`${String(r.full_name).trim().toLowerCase()}|${r.division}`, r.mika_idp == null ? null : String(r.mika_idp));
+    }
+  }
+  const out = assignDistinctNames(athletes, { nameOfIdp, ownerOfName });
+  const renamed = out.filter((a, i) => a.full_name !== athletes[i].full_name).length;
+  if (renamed) console.log(`\n      👥 ${renamed} athlete(s) share a name with another athlete: stored with their bib`);
+  return out;
+}
+
 async function upsertLiveAthletes(athletes) {
   if (athletes.length === 0 || IS_TEST) return;
+  athletes = await separateSameNames(athletes);
 
   // Deduplicate within batch to prevent collisions on both (race, name, div) and (race, mika_idp)
   const uniqueMap = new Map();
