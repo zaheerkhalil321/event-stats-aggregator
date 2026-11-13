@@ -24,7 +24,58 @@ export const STARTLIST_DDL = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_startlist_race_div_start ON startlist_entries(race_id, division, start_at)',
   'CREATE INDEX IF NOT EXISTS idx_startlist_race_start ON startlist_entries(race_id, start_at)',
+  // What one live-sync pass of a race costs, for the lane planner (scripts/lib/live_planner.mjs).
+  `CREATE TABLE IF NOT EXISTS live_pass_stats (
+    race_id TEXT PRIMARY KEY,
+    list_seconds REAL,
+    seconds_per_page REAL,
+    racing INTEGER,
+    freshness_minutes REAL,
+    updated_at TEXT
+  )`,
 ];
+
+export const STALE_MINUTES = 15; // positions older than this on average: the lane needs help
+
+/**
+ * Store what a pass of a race cost (averaged with earlier passes, so one slow pass does not swing
+ * the plan). Any field may be null: it then keeps its stored value.
+ */
+export async function recordPassStats(deps, raceId, { listSeconds = null, secondsPerPage = null, racing = null, freshness = null }) {
+  await deps.batch([{
+    sql: `INSERT INTO live_pass_stats (race_id, list_seconds, seconds_per_page, racing, freshness_minutes, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT (race_id) DO UPDATE SET
+            list_seconds = CASE WHEN excluded.list_seconds IS NULL THEN list_seconds
+                                WHEN list_seconds IS NULL THEN excluded.list_seconds
+                                ELSE (list_seconds + excluded.list_seconds) / 2 END,
+            seconds_per_page = CASE WHEN excluded.seconds_per_page IS NULL THEN seconds_per_page
+                                    WHEN seconds_per_page IS NULL THEN excluded.seconds_per_page
+                                    ELSE (seconds_per_page + excluded.seconds_per_page) / 2 END,
+            racing = COALESCE(excluded.racing, racing),
+            freshness_minutes = COALESCE(excluded.freshness_minutes, freshness_minutes),
+            updated_at = excluded.updated_at`,
+    args: [raceId, listSeconds, secondsPerPage, racing, freshness, iso(Date.now())],
+  }]);
+}
+
+/**
+ * How old, in minutes on average, the positions of a race's athletes on the course are (never read:
+ * counted from their heat start). null when nobody is on the course.
+ */
+export async function racingFreshness(deps, raceId, now = Date.now()) {
+  const [r] = await deps.query(`
+    SELECT COUNT(*) AS n,
+           AVG((julianday(?) - julianday(COALESCE(s.live_updated_at, s.start_at))) * 1440) AS age
+    FROM startlist_entries s
+    WHERE s.race_id = ? AND s.start_at <= ? AND s.start_at > ?
+      AND (s.live IS NULL OR json_extract(s.live, '$.last') IS NOT NULL)
+      AND (s.live IS NULL OR json_extract(s.live, '$.finished') IS NOT 1)
+      AND NOT EXISTS (SELECT 1 FROM hyrox_athlete_results r
+                      WHERE r.mika_idp = s.mika_idp AND r.total_time IS NOT NULL AND r.total_time != '')`,
+  [iso(now), raceId, iso(now), iso(now - RACING_WINDOW_MS)]);
+  return Number(r?.n ?? 0) ? { racing: Number(r.n), minutes: Math.round(Number(r.age) * 10) / 10 } : null;
+}
 
 export const STARTLIST_REFRESH_MS = 3 * 60 * 60 * 1000; // start lists change little during a race
 export const RACING_WINDOW_MS = 3 * 60 * 60 * 1000;     // longer than this without a finish: no result
@@ -157,6 +208,7 @@ export function withUtcTimes(live, heat, heatStartUtc) {
 /** Read detail pages of racing athletes until the deadline; store splits so far and position. */
 export async function refreshRacing(deps, seasonSlug, raceId, deadline) {
   const list = await racingAthletes(deps, raceId);
+  const started = Date.now();
   let read = 0;
   let pending = [];
   const flush = async () => { if (pending.length) await deps.batch(pending); pending = []; };
@@ -173,5 +225,5 @@ export async function refreshRacing(deps, seasonSlug, raceId, deadline) {
     if (pending.length >= 25) await flush();
   }
   await flush();
-  return { racing: list.length, read };
+  return { racing: list.length, read, seconds: (Date.now() - started) / 1000 };
 }

@@ -27,19 +27,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  live-sync:
-    name: ⚡ Live heats (${{ matrix.region }})
+  # Decides how many runners ("lanes") this run needs and which races each one syncs: every runner has
+  # its own IP and so its own mika rate limit (scripts/lib/live_planner.mjs, scripts/plan_live_lanes.mjs).
+  plan:
+    name: 🧭 Plan lanes
     runs-on: ubuntu-latest
-    # One runner per region: each has its own IP, so its own mika rate limit, and a weekend with
-    # many races at once is shared out instead of queuing on one runner.
-    strategy:
-      fail-fast: false
-      matrix:
-        region: [europe, asia, americas]
-    # A race day is one long session (a pass every 10 minutes) instead of one cold start per hour.
-    # Upstash triggers that arrive meanwhile wait in the concurrency queue and take over when it ends.
-    timeout-minutes: 350
-
+    outputs:
+      active: ${{ steps.gatekeeper.outputs.active }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: 📦 Checkout repository
         uses: actions/checkout@v4
@@ -58,14 +53,45 @@ jobs:
 
       - name: 📥 Install dependencies
         if: steps.gatekeeper.outputs.active == 'true'
-        run: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: 🧭 Share the races out over lanes
+        id: plan
+        if: steps.gatekeeper.outputs.active == 'true'
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          FORCE_RACE: ${{ github.event.inputs.race }}
+        run: node scripts/plan_live_lanes.mjs
+
+  live-sync:
+    name: ⚡ Lane ${{ matrix.label }}
+    needs: plan
+    if: needs.plan.outputs.active == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # A race day is one long session (a pass every 10 minutes) instead of one cold start per hour.
+    # Upstash triggers that arrive meanwhile wait in the concurrency queue and take over when it ends.
+    timeout-minutes: 350
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 📥 Install dependencies
+        run: npm install --no-audit --no-fund
 
       - name: 🌐 Install Playwright Chromium browser
-        if: steps.gatekeeper.outputs.active == 'true'
         run: npx playwright install chromium --with-deps
 
       - name: ⚡ Run Live Sync Engine (race-day session)
-        if: steps.gatekeeper.outputs.active == 'true'
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
@@ -74,13 +100,12 @@ jobs:
           IN_RACE: ${{ github.event.inputs.race }}
           IN_SPLITS: ${{ github.event.inputs.splits || 'all' }}
           IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
-          REGION: ${{ matrix.region }}
+          LANE_ARGS: ${{ matrix.args }}
         run: |
           # One pass every 10 minutes for up to ~5.5 hours while a race is active. Each pass stores the
-          # list pages first (only waves whose count changed, plus a full read every hour), checks every
-          # race/division against the site, then opens detail pages of new finishers until --until.
-          # The short detail budget keeps new results appearing within about 10 minutes; splits left
-          # over are picked up by the next passes and the splits backfill.
+          # list pages first (only waves whose count changed, plus a full read every hour), then reads
+          # where the athletes on the course are, checks every race/division against the site, and opens
+          # detail pages of new finishers until --until. Splits left over go to the splits backfill.
           SESSION_END=$(( $(date +%s) + 330 * 60 ))
           PASS=1
           while :; do
@@ -88,13 +113,7 @@ jobs:
             UNTIL=$(( START + 8 * 60 ))
             [ "$UNTIL" -gt "$SESSION_END" ] && UNTIL=$SESSION_END
             ARGS=(--splits="$IN_SPLITS" --until "$UNTIL")
-            # A manual run for one race uses the europe runner only (it reads that race wherever it is).
-            if [ -n "$IN_RACE" ]; then
-              [ "$REGION" != "europe" ] && { echo "Manual single-race run happens on the europe runner."; break; }
-              ARGS+=(--race="$IN_RACE")
-            else
-              ARGS+=(--region="$REGION")
-            fi
+            [ -n "$LANE_ARGS" ] && ARGS+=("$LANE_ARGS")
             [ "$IN_DRY_RUN" = "true" ] && ARGS+=(--test)
             echo "::group::Pass $PASS ($(date -u +%H:%M) UTC)"
             node sync_live.mjs "${ARGS[@]}" || echo "⚠️ Pass $PASS failed; the next pass retries."
@@ -102,8 +121,8 @@ jobs:
 
             # Manual single-race or dry runs do one pass.
             if [ -n "$IN_RACE" ] || [ "$IN_DRY_RUN" = "true" ]; then break; fi
-            # Nothing of this region today or tomorrow: free the runner (the next hourly trigger checks again).
-            if [ -f .live-region-idle ]; then echo "No race of region $REGION running — ending this runner."; break; fi
+            # None of this lane's races runs today or tomorrow: free the runner.
+            if [ -f .live-lane-idle ]; then echo "No race of this lane running — ending this runner."; break; fi
             NEXT=$(( START + 10 * 60 ))
             if [ "$NEXT" -ge "$SESSION_END" ]; then echo "Session time budget reached."; break; fi
             # Stop as soon as no race is active any more (end of the race weekend).

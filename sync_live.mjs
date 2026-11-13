@@ -29,7 +29,8 @@ import { createMikaClient } from './scripts/lib/mika_http.mjs';
 import { assignDistinctNames, baseIdp, divisionLabel as waveDivision, extraWavesFor, isOverallWave, normalizeFinishTime, parseListPage, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 import { raceOwners } from './scripts/lib/overall_owners.mjs';
 import { raceRegion } from './scripts/lib/startlist.mjs';
-import { STARTLIST_DDL, raceInStartlistWindow, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
+import { STALE_MINUTES, STARTLIST_DDL, raceInStartlistWindow, racingFreshness, recordPassStats, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
+import { laneFilter } from './scripts/lib/live_planner.mjs';
 
 dotenv.config();
 
@@ -65,9 +66,12 @@ const untilArg = process.argv.find(arg => arg.startsWith('--until='))?.split('='
                  || (process.argv.includes('--until') ? process.argv[process.argv.indexOf('--until') + 1] : null);
 const DETAIL_DEADLINE = untilArg ? parseInt(untilArg, 10) * 1000 : Infinity;
 
-// --region=europe|asia|americas: only the races of that region (one GitHub runner per region).
-const REGION = process.argv.find(arg => arg.startsWith('--region='))?.split('=')[1] || null;
-const REGION_IDLE_FILE = '.live-region-idle';
+// Lanes (scripts/lib/live_planner.mjs): --races=a,b syncs only those races, --exclude=c,d all others.
+const listArg = (name) => process.argv.find(arg => arg.startsWith(`--${name}=`))?.split('=')[1]?.split(',').filter(Boolean) || null;
+const LANE_RACES = listArg('races');
+const LANE_EXCLUDE = listArg('exclude');
+const IS_LANE = Boolean(LANE_RACES || LANE_EXCLUDE);
+const LANE_IDLE_FILE = '.live-lane-idle';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -1020,19 +1024,22 @@ async function main() {
       console.log(`🎯 Scanning all ${targetGroups.length} Season 9 event groups...`);
     }
 
-    if (REGION) {
-      targetGroups = targetGroups.filter(g => raceRegion(raceForGroup(g.label)) === REGION);
+    if (IS_LANE) {
+      const inLane = laneFilter({ races: LANE_RACES, exclude: LANE_EXCLUDE });
+      targetGroups = targetGroups.filter(g => inLane(raceForGroup(g.label).id));
       const inWindow = targetGroups.filter(g => raceInStartlistWindow(raceForGroup(g.label)));
-      console.log(`🌍 Region ${REGION}: ${targetGroups.length} race(s), ${inWindow.length} running today or tomorrow${inWindow.length ? `: ${inWindow.map(g => g.label).join(', ')}` : ''}.`);
-      // The workflow ends this region's session when nothing of the region is running.
+      console.log(`🛣️ Lane: ${targetGroups.length} race(s), ${inWindow.length} running today or tomorrow${inWindow.length ? `: ${inWindow.map(g => g.label).join(', ')}` : ''}.`);
+      // The workflow ends this lane's session when none of its races is running.
       try {
-        if (inWindow.length) fs.rmSync(REGION_IDLE_FILE, { force: true });
-        else fs.writeFileSync(REGION_IDLE_FILE, new Date().toISOString());
+        if (inWindow.length) fs.rmSync(LANE_IDLE_FILE, { force: true });
+        else fs.writeFileSync(LANE_IDLE_FILE, new Date().toISOString());
       } catch { /* the session just keeps going */ }
     }
 
-    // Races mika may mix up run in the same region (same weekend, same continent).
-    const ownerPool = REGION ? allOptgroups.filter(g => raceRegion(raceForGroup(g.label)) === REGION) : allOptgroups;
+    // Races mika may mix up run in the same region on the same days. A lane reads the Overall lists of
+    // every such race, also those another lane syncs, so a mixed-up result still finds its race.
+    const laneRegions = new Set(targetGroups.map(g => raceRegion(raceForGroup(g.label))));
+    const ownerPool = IS_LANE ? allOptgroups.filter(g => laneRegions.has(raceRegion(raceForGroup(g.label)))) : allOptgroups;
     const resultOwners = await buildRaceOwners(seasonSlug, ownerPool, targetGroups, sonstige).catch((err) => {
       console.log(`⚠️ Overall lists could not be read (${err.message}); results stay in the race of their wave.`);
       return new Map();
@@ -1270,6 +1277,7 @@ async function main() {
       `) || []).map(r => r.mika_idp));
       console.log(`   ♻️ ${doneIdps.size} athletes of this race already have splits — their detail pages are skipped.`);
 
+      const listStarted = Date.now();
       const ctx = { race, waves: [], enrich: [], effectiveSplitsLimit, doneIdps };
       for (const opt of activeOptions) {
         const upper = opt.text.toUpperCase();
@@ -1283,6 +1291,9 @@ async function main() {
 
       const finalCount = await updateLiveRaceCount(race.id, race.date, race.end_date);
       console.log(`\n   🏁 ${race.name} lists stored. Total athletes in DB: ${finalCount}`);
+      if (liveDeps && !IS_TEST) {
+        await recordPassStats(liveDeps, race.id, { listSeconds: (Date.now() - listStarted) / 1000 }).catch(() => {});
+      }
     }
 
     // Athletes on the course first (up to 4 minutes, shared by the races), so their position is at most
@@ -1294,7 +1305,19 @@ async function main() {
         const share = Date.now() + (racingEnd - Date.now()) / (liveRaces.length - i);
         try {
           const r = await refreshRacing(liveDeps, seasonSlug, race.id, Math.min(racingEnd, share));
-          if (r.racing) console.log(`🏃 ${race.id}: ${r.racing} on the course, ${r.read} detail pages read.`);
+          if (r.racing) console.log(`🏃 ${race.id}: ${r.racing} on the course, ${r.read} detail pages read in ${Math.round(r.seconds)} s.`);
+          // How old the positions are now; the planner and a warning use it.
+          const fresh = await racingFreshness(liveDeps, race.id);
+          if (!IS_TEST) {
+            await recordPassStats(liveDeps, race.id, {
+              secondsPerPage: r.read >= 20 ? r.seconds / r.read : null,
+              racing: fresh?.racing ?? 0,
+              freshness: fresh?.minutes ?? null,
+            }).catch(() => {});
+          }
+          if (fresh && fresh.minutes > STALE_MINUTES) {
+            console.log(`::warning title=Live positions old::${race.id}: ${fresh.racing} athletes on the course, positions ${fresh.minutes} min old on average (target under ${STALE_MINUTES}).`);
+          }
         } catch (err) {
           console.log(`⚠️ Racing athletes of ${race.id} could not be read: ${err.message}`);
         }

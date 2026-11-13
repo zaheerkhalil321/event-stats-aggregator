@@ -26,7 +26,11 @@ describe('GitHub Actions Workflow Architecture & Integrity', () => {
 
   it('TC26: live-sync.yml gatekeeper step executes before install steps', () => {
     const doc = parseYamlWithRuby('.github/workflows/live-sync.yml');
-    const steps = doc.jobs['live-sync'].steps;
+    // The plan job checks the gatekeeper first; the lanes only start when it found a race.
+    const steps = doc.jobs.plan.steps;
+    assert.strictEqual(doc.jobs['live-sync'].needs, 'plan');
+    assert.strictEqual(doc.jobs['live-sync'].if, "needs.plan.outputs.active == 'true'");
+    assert.match(String(doc.jobs['live-sync'].strategy.matrix), /fromJSON\(needs\.plan\.outputs\.matrix\)/);
     
     const gatekeeperIndex = steps.findIndex(s => s.id === 'gatekeeper');
     assert.ok(gatekeeperIndex !== -1, 'Gatekeeper step with id: gatekeeper must exist');
