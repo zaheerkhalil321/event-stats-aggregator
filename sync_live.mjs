@@ -28,6 +28,7 @@ import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
 import { assignDistinctNames, baseIdp, divisionLabel as waveDivision, extraWavesFor, isOverallWave, normalizeFinishTime, parseListPage, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 import { raceOwners } from './scripts/lib/overall_owners.mjs';
+import { STARTLIST_DDL, raceInStartlistWindow, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
 
 dotenv.config();
 
@@ -1022,6 +1023,20 @@ async function main() {
     const waveState = loadWaveState();
     const syncedRaces = [];
 
+    // Live tracking (docs/live-tracking-plan.md): start lists of races running today, and the detail
+    // pages of athletes racing right now. Needs the libSQL client (batches, json_extract).
+    const liveDeps = turso ? {
+      mika,
+      query: async (sql, args = []) => (await turso.execute({ sql, args })).rows,
+      batch: async (stmts) => (IS_TEST ? null : turso.batch(stmts, 'write')),
+      log: console.log,
+    } : null;
+    const liveRaces = [];
+    if (liveDeps && !IS_TEST) {
+      for (const ddl of STARTLIST_DDL) await turso.execute(ddl);
+      await removeOldStartlists(liveDeps).catch((err) => console.log(`⚠️ Old start lists not removed: ${err.message}`));
+    }
+
     /**
      * One wave and sex of one race: skipped when the site still lists the same number of results
      * as at the last full read (less than an hour ago); otherwise read, stored, and results another
@@ -1172,6 +1187,17 @@ async function main() {
 
       const race = raceForGroup(group.label);
       console.log(`   🔗 "${group.label}" -> ${race.id} (${race.date} to ${race.end_date})`);
+
+      if (liveDeps && raceInStartlistWindow(race)) {
+        try {
+          const sl = await syncStartlist(liveDeps, race, [...group.options, ...extraWaves], resultOwners);
+          if (sl.skipped) console.log('   📋 Start list stored less than 3 h ago; not read again yet.');
+          else console.log(`   📋 Start list: ${sl.stored} entries stored${sl.removed ? `, ${sl.removed} no longer listed removed` : ''}${sl.complete === false ? ' (some pages failed; nothing removed)' : ''}.`);
+          liveRaces.push(race);
+        } catch (err) {
+          console.log(`   ⚠️ Start list of ${race.id} failed: ${err.message}`);
+        }
+      }
       const isPastRace = race.end_date && race.end_date < new Date().toISOString().slice(0, 10);
       const isFutureRace = race.date && race.date > new Date().toISOString().slice(0, 10);
       const isTargetingSpecificRace = FORCE_RACE && FORCE_RACE.toLowerCase() !== 'all';
@@ -1237,13 +1263,25 @@ async function main() {
       }
       syncedRaces.push(ctx);
 
-      // Splits come after every wave's list is stored, so new finishers appear without waiting
-      // for other waves' detail pages.
-      await fetchSplits(ctx);
-
       const finalCount = await updateLiveRaceCount(race.id, race.date, race.end_date);
-      console.log(`\n   🏁 ${race.name} sync complete! Total athletes in DB: ${finalCount}`);
+      console.log(`\n   🏁 ${race.name} lists stored. Total athletes in DB: ${finalCount}`);
     }
+
+    // Athletes on the course first (up to 4 minutes, shared by the races), so their position is at most
+    // one pass old; then detail pages of new finishers until the pass budget ends.
+    if (liveRaces.length) {
+      const racingEnd = Math.min(DETAIL_DEADLINE, Date.now() + 4 * 60 * 1000);
+      for (const [i, race] of liveRaces.entries()) {
+        const share = Date.now() + (racingEnd - Date.now()) / (liveRaces.length - i);
+        try {
+          const r = await refreshRacing(liveDeps, seasonSlug, race.id, Math.min(racingEnd, share));
+          if (r.racing) console.log(`🏃 ${race.id}: ${r.racing} on the course, ${r.read} detail pages read.`);
+        } catch (err) {
+          console.log(`⚠️ Racing athletes of ${race.id} could not be read: ${err.message}`);
+        }
+      }
+    }
+    for (const ctx of syncedRaces) await fetchSplits(ctx);
 
     await verifyPass();
     saveWaveState(waveState);
