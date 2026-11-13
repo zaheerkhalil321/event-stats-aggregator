@@ -49,3 +49,27 @@ test('actual start and last timing mat in UTC from the heat start', async () => 
   assert.equal(out.lastAt, '2026-11-13T11:33:59.000Z');
   assert.equal(withUtcTimes(live, null, null), live);
 });
+
+test('a start list refresh removes only its own waves\' old entries', async () => {
+  const { syncStartlist } = await import('../scripts/lib/live_tracking.mjs');
+  const page = fixture('startlist-page.html');
+  const calls = [];
+  const deps = {
+    mika: { get: async () => ({ text: page }) },
+    query: async (sql, args) => { calls.push({ sql, args }); return [{ n: 0, at: null }]; },
+    batch: async (stmts) => { for (const s of stmts) calls.push(s); },
+    log: () => {},
+  };
+  const race = { id: 'dusseldorf-2026', city: 'Düsseldorf', country_code: 'DE', date: '2026-11-11', end_date: '2026-11-15' };
+  const owners = new Map([['LR3MS4JI5BAE2C', 'barcelona-nov-2026']]);
+  await syncStartlist(deps, race, [{ val: 'HD_X', text: 'HYROX DOUBLES - Friday' }, { val: 'H_OVERALL', text: 'HYROX - Overall' }], owners, { force: true });
+  const inserts = calls.filter((c) => /^\s*INSERT/.test(c.sql));
+  assert.ok(inserts.some((c) => c.args[0] === 'barcelona-nov-2026'), 'claimed entry stored under its race');
+  const cleanup = calls.filter((c) => /DELETE|COUNT/.test(c.sql));
+  assert.ok(cleanup.length > 0);
+  for (const c of cleanup) {
+    assert.match(c.sql, /mika_event IN \(\?\)/);
+    assert.doesNotMatch(c.sql, /race_id/);
+    assert.equal(c.args[0], 'HD_X');
+  }
+});

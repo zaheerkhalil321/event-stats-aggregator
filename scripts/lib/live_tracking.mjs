@@ -40,13 +40,16 @@ export function raceInStartlistWindow(race, now = Date.now()) {
   return Boolean(race?.date) && race.date <= tomorrow && (race.end_date || race.date) >= today;
 }
 
+/** The waves of a race that have a start list (not the Overall lists). */
+export const startlistWaves = (waves) => waves.filter((o) => !isOverallWave(o.val) && !/OVERALL/i.test(o.text));
+
 /** Start list rows of one race, with their division and heat start in UTC. */
 export async function readStartlist(deps, race, waves, owners = new Map()) {
   const tz = raceTimezone(race);
   if (!tz) deps.log(`   ⚠️ No time zone known for ${race.city} (${race.country_code}); heats get no start time.`);
   const rows = [];
   let complete = true;
-  for (const opt of waves.filter((o) => !isOverallWave(o.val) && !/OVERALL/i.test(o.text))) {
+  for (const opt of startlistWaves(waves)) {
     for (const sex of sexesFor(opt.text)) {
       for (let page = 1; page <= 60; page++) {
         const r = await deps.mika.get(startlistUrl(opt.val, sex, page));
@@ -77,7 +80,14 @@ export async function readStartlist(deps, race, waves, owners = new Map()) {
 /** Store a race's start list (every 3 h). Rows that left the start list are removed after a full read. */
 export async function syncStartlist(deps, race, waves, owners, { force = false, now = Date.now() } = {}) {
   if (!force) {
-    const [last] = await deps.query('SELECT MAX(updated_at) AS at FROM startlist_entries WHERE race_id = ?', [race.id]);
+    // By the waves read, not by race id: entries another race's Overall list claims are stored under that
+    // race, and must neither make this race look fresh nor keep it from being read.
+    const ids = startlistWaves(waves).map((o) => o.val);
+    if (!ids.length) return { stored: 0 };
+    const [last] = await deps.query(
+      `SELECT MAX(updated_at) AS at FROM startlist_entries WHERE race_id = ? AND mika_event IN (${ids.map(() => '?').join(', ')})`,
+      [race.id, ...ids],
+    );
     if (last?.at && now - Date.parse(last.at) < STARTLIST_REFRESH_MS) return { skipped: true };
   }
   const { rows, complete } = await readStartlist(deps, race, waves, owners);
@@ -94,13 +104,13 @@ export async function syncStartlist(deps, race, waves, owners, { force = false, 
   for (let i = 0; i < stmts.length; i += 200) await deps.batch(stmts.slice(i, i + 200));
   let removed = 0;
   if (complete) {
-    // An entry seen under another race (owner moved) is stored there, so the old copy goes too.
-    const races = [...new Set(rows.map((r) => r.race_id))];
-    for (const id of races) {
-      const res = await deps.query('SELECT COUNT(*) AS n FROM startlist_entries WHERE race_id = ? AND updated_at < ?', [id, stamp]);
-      removed += Number(res[0]?.n ?? 0);
-      await deps.batch([{ sql: 'DELETE FROM startlist_entries WHERE race_id = ? AND updated_at < ?', args: [id, stamp] }]);
-    }
+    // Only entries read from these waves and not seen now: entries of other races (also ones moved
+    // there from these waves earlier and still listed) keep their rows.
+    const ids = [...new Set(rows.map((r) => r.mika_event))];
+    const where = `mika_event IN (${ids.map(() => '?').join(', ')}) AND updated_at < ?`;
+    const res = await deps.query(`SELECT COUNT(*) AS n FROM startlist_entries WHERE ${where}`, [...ids, stamp]);
+    removed = Number(res[0]?.n ?? 0);
+    if (removed) await deps.batch([{ sql: `DELETE FROM startlist_entries WHERE ${where}`, args: [...ids, stamp] }]);
   }
   return { stored: rows.length, removed, complete };
 }
