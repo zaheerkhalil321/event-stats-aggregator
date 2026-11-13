@@ -69,14 +69,16 @@ jobs:
           IN_SPLITS: ${{ github.event.inputs.splits || 'all' }}
           IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
-          # One pass every 10 minutes for up to ~5.5 hours while a race is active. Each pass reads the
-          # list pages and opens detail pages only for new finishers (sync_live.mjs skips athletes that
-          # already have splits); a pass stops opening detail pages at its --until budget.
+          # One pass every 10 minutes for up to ~5.5 hours while a race is active. Each pass stores the
+          # list pages first (only waves whose count changed, plus a full read every hour), checks every
+          # race/division against the site, then opens detail pages of new finishers until --until.
+          # The short detail budget keeps new results appearing within about 10 minutes; splits left
+          # over are picked up by the next passes and the splits backfill.
           SESSION_END=$(( $(date +%s) + 330 * 60 ))
           PASS=1
           while :; do
             START=$(date +%s)
-            UNTIL=$(( START + 50 * 60 ))
+            UNTIL=$(( START + 8 * 60 ))
             [ "$UNTIL" -gt "$SESSION_END" ] && UNTIL=$SESSION_END
             ARGS=(--splits="$IN_SPLITS" --until "$UNTIL")
             [ -n "$IN_RACE" ] && ARGS+=(--race="$IN_RACE")

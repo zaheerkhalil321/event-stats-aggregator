@@ -22,10 +22,11 @@
  */
 
 import dotenv from 'dotenv';
+import fs from 'node:fs';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
-import { assignDistinctNames, baseIdp, extraWavesFor, isOverallWave, normalizeFinishTime, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { assignDistinctNames, baseIdp, divisionLabel as waveDivision, extraWavesFor, isOverallWave, normalizeFinishTime, parseListPage, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 import { raceOwners } from './scripts/lib/overall_owners.mjs';
 
 dotenv.config();
@@ -876,7 +877,20 @@ async function buildRaceOwners(seasonSlug, allGroups, targetGroups, sonstige) {
   const active = targetGroups.map(span).filter(x => x.from && x.from <= today && (targeted || x.to >= daysAgo(3)));
   if (!active.length) return new Map();
   const overlapping = allGroups.map(span).filter(x => x.from && active.some(a => x.from <= a.to && x.to >= a.from));
+  // The Overall lists change slowly; between passes they are reused for up to 30 minutes.
+  const CACHE = '.live-owner-cache.json';
+  const raceIds = overlapping.map((x) => x.r.id).sort().join(',');
+  try {
+    const c = JSON.parse(fs.readFileSync(CACHE, 'utf8'));
+    if (c.races === raceIds && Date.now() - c.at < 30 * 60 * 1000) {
+      console.log(`🧭 Overall lists from ${Math.round((Date.now() - c.at) / 60000)} min ago reused: ${c.owners.length} results mapped to their race.`);
+      return new Map(c.owners);
+    }
+  } catch { /* no cache yet */ }
   const { owners, racesWithOverall } = await raceOwners(mika, seasonSlug, overlapping.map((x) => ({ raceId: x.r.id, group: x.g })), sonstige);
+  if (!IS_TEST) {
+    try { fs.writeFileSync(CACHE, JSON.stringify({ at: Date.now(), races: raceIds, owners: [...owners] })); } catch { /* read again next pass */ }
+  }
   console.log(`🧭 Overall lists read for ${racesWithOverall} race(s) running at the same time: ${owners.size} results mapped to their race.`);
   return owners;
 }
@@ -897,6 +911,39 @@ async function relocateStoredResults(moved) {
     }
     await runQuery(`DELETE FROM hyrox_athlete_results WHERE race_id = ${esc(a.moved_from)} AND mika_idp = ${id}`);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave state between passes (the workflow runs one pass every 10 minutes in the same workspace)
+// ─────────────────────────────────────────────────────────────────────────────
+const STATE_FILE = '.live-wave-state.json';
+const FULL_RESCAN_MS = 60 * 60 * 1000; // read every wave in full at least once an hour (late corrections)
+
+function loadWaveState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    const cutoff = Date.now() - 2 * 86_400_000;
+    for (const [k, v] of Object.entries(s.waves ?? {})) if (!(v.fullAt > cutoff)) delete s.waves[k];
+    return { waves: s.waves ?? {}, mismatch: s.mismatch ?? {} };
+  } catch {
+    return { waves: {}, mismatch: {} };
+  }
+}
+
+function saveWaveState(state) {
+  if (IS_TEST) return;
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch { /* next pass rescans */ }
+}
+
+/** Results the site lists for one wave and sex, from its first list page (cheap, plain HTTP). */
+async function siteWaveTotal(seasonSlug, waveVal, sex) {
+  const r = await mika.get(`https://results.hyrox.com/${seasonSlug}/?event=${waveVal}&pid=list&num_results=100&search[sex]=${sex}&page=1`);
+  if (!r?.text) return { total: null, exact: false };
+  const page = parseListPage(r.text);
+  const real = page.items.filter(i => !/^Ament-/.test(i.name || '')).length;
+  if (page.items.length < 100) return { total: real, exact: true };
+  if (page.total && !page.totalIsLowerBound) return { total: page.total, exact: true };
+  return { total: null, exact: false };
 }
 
 async function main() {
@@ -971,6 +1018,138 @@ async function main() {
       console.log(`⚠️ Overall lists could not be read (${err.message}); results stay in the race of their wave.`);
       return new Map();
     });
+
+    const waveState = loadWaveState();
+    const syncedRaces = [];
+
+    /**
+     * One wave and sex of one race: skipped when the site still lists the same number of results
+     * as at the last full read (less than an hour ago); otherwise read, stored, and results another
+     * race's Overall list claims moved there.
+     */
+    async function syncWave(ctx, opt, sex, { force }) {
+      const { race } = ctx;
+      const key = `${opt.val}|${sex}`;
+      const div = waveDivision(opt.text, sex);
+      const site = await siteWaveTotal(seasonSlug, opt.val, sex).catch(() => ({ total: null, exact: false }));
+      const prev = waveState.waves[key];
+      const unchanged = !force && prev && site.exact && prev.total === site.total && Date.now() - prev.fullAt < FULL_RESCAN_MS;
+      const entry = { key, opt, sex, div, siteTotal: site.exact ? site.total : null };
+      ctx.waves.push(entry);
+      if (unchanged) {
+        entry.movedOut = prev.movedOut ?? {};
+        return { kept: 0, skipped: true };
+      }
+      if (site.exact && site.total === 0 && !prev) {
+        entry.movedOut = {};
+        waveState.waves[key] = { total: 0, fullAt: Date.now(), movedOut: {}, race: race.id, div };
+        return { kept: 0 };
+      }
+
+      const athletes = await scrapeWaveDirect(page, seasonSlug, race.id, opt.text, opt.val, sex);
+      const { kept, moved, skipped } = reassignByOwner(athletes, race.id, resultOwners);
+      if (athletes.length > 0) {
+        console.log(`\n      ✅ Found ${athletes.length} athletes for [${opt.text}] (${sex})`);
+        if (skipped) console.log(`      ⚠️ ${skipped} of ${athletes.length} results are claimed by another race's Overall list; too many to trust, kept in ${race.id}.`);
+        await upsertLiveAthletes(kept);
+        if (moved.length) {
+          const byRace = new Map();
+          for (const a of moved) byRace.set(a.race_id, [...(byRace.get(a.race_id) ?? []), a]);
+          console.log(`      🧭 ${moved.length} result(s) of [${opt.text}] belong to another race: ${[...byRace].map(([r, l]) => `${l.length} -> ${r}`).join(', ')}`);
+          await relocateStoredResults(moved);
+          for (const list of byRace.values()) await upsertLiveAthletes(list);
+        }
+        const candidates = [...kept, ...moved].slice(0, ctx.effectiveSplitsLimit);
+        ctx.enrich.push(...candidates.filter(a => !a.mika_idp || !ctx.doneIdps.has(a.mika_idp)));
+      }
+      const movedOut = {};
+      for (const a of moved) movedOut[a.race_id] = (movedOut[a.race_id] ?? 0) + 1;
+      entry.movedOut = movedOut;
+      if (entry.siteTotal === null) entry.siteTotal = athletes.length;
+      waveState.waves[key] = { total: site.exact ? site.total : athletes.length, fullAt: Date.now(), movedOut, race: race.id, div };
+      return { kept: kept.length };
+    }
+
+    /** What the site lists per race and division this pass (moved results counted where they belong). */
+    function expectedCounts() {
+      const expected = new Map();
+      const add = (raceId, div, n) => {
+        if (!expected.has(raceId)) expected.set(raceId, new Map());
+        const m = expected.get(raceId);
+        m.set(div, (m.get(div) ?? 0) + n);
+      };
+      for (const ctx of syncedRaces) {
+        for (const w of ctx.waves) {
+          if (w.siteTotal == null) continue;
+          const out = Object.values(w.movedOut ?? {}).reduce((a, b) => a + b, 0);
+          add(ctx.race.id, w.div, w.siteTotal - out);
+          for (const [raceId, n] of Object.entries(w.movedOut ?? {})) add(raceId, w.div, n);
+        }
+      }
+      return expected;
+    }
+
+    async function findGaps() {
+      const expected = expectedCounts();
+      const gaps = [];
+      for (const ctx of syncedRaces) {
+        const db = await getRaceDivisionCounts(ctx.race.id);
+        for (const [div, exp] of expected.get(ctx.race.id) ?? []) {
+          const have = db.get(div) ?? 0;
+          if (have < exp - Math.max(2, Math.ceil(exp * 0.005))) gaps.push({ ctx, div, exp, have });
+        }
+      }
+      return gaps;
+    }
+
+    /**
+     * After every pass: does each race/division hold what the site lists? Gaps are re-read at once
+     * (not left for the nightly check); a gap that stays is reported as a GitHub warning.
+     */
+    async function verifyPass() {
+      if (!syncedRaces.length || IS_TEST) return;
+      let gaps = await findGaps();
+      if (!gaps.length) {
+        console.log('🔎 Pass check: every live race and division matches the results site.');
+        waveState.mismatch = {};
+        return;
+      }
+      for (const g of gaps) {
+        console.log(`🔎 Pass check: ${g.ctx.race.id} ${g.div} has ${g.have}, the site lists ${g.exp}. Re-reading its waves…`);
+        for (const w of g.ctx.waves.filter(x => x.div === g.div)) {
+          g.ctx.waves.splice(g.ctx.waves.indexOf(w), 1);
+          await syncWave(g.ctx, w.opt, w.sex, { force: true });
+        }
+      }
+      gaps = await findGaps();
+      const now = {};
+      for (const g of gaps) {
+        const k = `${g.ctx.race.id}|${g.div}`;
+        now[k] = (waveState.mismatch[k] ?? 0) + 1;
+        console.log(`::warning title=Live count gap::${g.ctx.race.id} ${g.div}: database ${g.have}, results site ${g.exp} (pass ${now[k]} in a row)`);
+      }
+      waveState.mismatch = now;
+      if (!gaps.length) console.log('🔎 Pass check: gaps fixed by re-reading.');
+    }
+
+    /** Detail pages (splits) of new finishers, within the pass budget, then stored again. */
+    async function fetchSplits(ctx) {
+      if (!ctx.enrich.length) return;
+      let fetched = 0;
+      for (const athlete of ctx.enrich) {
+        if (Date.now() >= DETAIL_DEADLINE) break;
+        await scrapeSplits(page, athlete);
+        fetched++;
+        if (athlete.mika_idp && athlete.run_1) ctx.doneIdps.add(athlete.mika_idp);
+        if (fetched % 10 === 0 || fetched === ctx.enrich.length) process.stdout.write(`      ⏱️ Deep splits: [${fetched}/${ctx.enrich.length}] new\r`);
+      }
+      console.log('');
+      if (fetched < ctx.enrich.length) console.log(`      ⏱️ Pass time budget reached: ${ctx.enrich.length - fetched} detail pages left for the next pass / backfill.`);
+      const done = ctx.enrich.slice(0, fetched).filter(a => a.run_1);
+      const byRace = new Map();
+      for (const a of done) byRace.set(a.race_id, [...(byRace.get(a.race_id) ?? []), a]);
+      for (const list of byRace.values()) await upsertLiveAthletes(list);
+    }
 
     for (const group of targetGroups) {
       console.log(`\n${'═'.repeat(60)}`);
@@ -1047,61 +1226,27 @@ async function main() {
       `) || []).map(r => r.mika_idp));
       console.log(`   ♻️ ${doneIdps.size} athletes of this race already have splits — their detail pages are skipped.`);
 
+      const ctx = { race, waves: [], enrich: [], effectiveSplitsLimit, doneIdps };
       for (const opt of activeOptions) {
-        const waveText = opt.text;
-        const waveVal = opt.val;
-        const upper = waveText.toUpperCase();
-
-        // Determine which sex filters apply to this wave
-        let sexesToQuery = ['M', 'W'];
-        if (upper.includes('DOUBLES')) sexesToQuery = ['M', 'W', 'X'];
-        if (upper.includes('RELAY')) sexesToQuery = ['M', 'W', 'X'];
-
+        const upper = opt.text.toUpperCase();
+        const sexesToQuery = upper.includes('DOUBLES') || upper.includes('RELAY') ? ['M', 'W', 'X'] : ['M', 'W'];
         for (const sex of sexesToQuery) {
-          const athletes = await scrapeWaveDirect(page, seasonSlug, race.id, waveText, waveVal, sex);
-
-          if (athletes.length > 0) {
-            console.log(`\n      ✅ Found ${athletes.length} athletes for [${waveText}] (${sex})`);
-
-            // Fetch deep splits for finishers that do not have them yet (only for active/live races)
-            const candidates = athletes.slice(0, effectiveSplitsLimit);
-            const needSplits = candidates.filter(a => !a.mika_idp || !doneIdps.has(a.mika_idp));
-            let fetched = 0;
-            for (const athlete of needSplits) {
-              if (Date.now() >= DETAIL_DEADLINE) break;
-              await scrapeSplits(page, athlete);
-              fetched++;
-              if (athlete.mika_idp && athlete.run_1) doneIdps.add(athlete.mika_idp);
-              if (fetched % 10 === 0 || fetched === needSplits.length) {
-                process.stdout.write(`      ⏱️ Deep splits: [${fetched}/${needSplits.length}] new (${candidates.length - needSplits.length} already done)\r`);
-              }
-            }
-            if (needSplits.length > 0) console.log('');
-            if (fetched < needSplits.length) {
-              console.log(`      ⏱️ Pass time budget reached: ${needSplits.length - fetched} detail pages left for the next pass / backfill.`);
-            }
-
-            // Results another race's Overall list claims go to that race.
-            const { kept, moved, skipped } = reassignByOwner(athletes, race.id, resultOwners);
-            if (skipped) {
-              console.log(`      ⚠️ ${skipped} of ${athletes.length} results are claimed by another race's Overall list; too many to trust, kept in ${race.id}.`);
-            }
-            await upsertLiveAthletes(kept);
-            if (moved.length) {
-              const byRace = new Map();
-              for (const a of moved) byRace.set(a.race_id, [...(byRace.get(a.race_id) ?? []), a]);
-              console.log(`      🧭 ${moved.length} result(s) of [${waveText}] belong to another race: ${[...byRace].map(([r, l]) => `${l.length} -> ${r}`).join(', ')}`);
-              await relocateStoredResults(moved);
-              for (const list of byRace.values()) await upsertLiveAthletes(list);
-            }
-            totalRaceAthletes += kept.length;
-          }
+          const r = await syncWave(ctx, opt, sex, { force: false });
+          totalRaceAthletes += r.kept;
         }
       }
+      syncedRaces.push(ctx);
+
+      // Splits come after every wave's list is stored, so new finishers appear without waiting
+      // for other waves' detail pages.
+      await fetchSplits(ctx);
 
       const finalCount = await updateLiveRaceCount(race.id, race.date, race.end_date);
       console.log(`\n   🏁 ${race.name} sync complete! Total athletes in DB: ${finalCount}`);
     }
+
+    await verifyPass();
+    saveWaveState(waveState);
 
     console.log('\n' + '='.repeat(68));
     console.log('🎉 ALL LIVE EVENTS SYNCED SUCCESSFULLY!');
