@@ -40,3 +40,12 @@ test('race day dates and heat times in UTC', () => {
   assert.equal(localToUtc('2026-03-29', '10:00', 'Europe/Berlin'), '2026-03-29T08:00:00.000Z'); // first day of summer time
   assert.equal(raceTimezone({ city: 'Atlantis', country_code: 'ZZ' }), null);
 });
+
+test('actual start and last timing mat in UTC from the heat start', async () => {
+  const { withUtcTimes } = await import('../scripts/lib/live_tracking.mjs');
+  const live = { startTod: '19:40:11', last: { point: 'Rox Out', elapsed: '00:53:48', tod: '20:34:00' } };
+  const out = withUtcTimes(live, '19:40', '2026-11-13T10:40:00.000Z');
+  assert.equal(out.startedAt, '2026-11-13T10:40:11.000Z');
+  assert.equal(out.lastAt, '2026-11-13T11:33:59.000Z');
+  assert.equal(withUtcTimes(live, null, null), live);
+});

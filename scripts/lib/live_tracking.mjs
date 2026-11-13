@@ -3,7 +3,7 @@
 //
 // deps: { mika (paced client), query(sql, args) -> rows, batch([{sql, args}]), log }
 import { baseIdp, divisionLabel, isOverallWave } from './mika_list.mjs';
-import { detailUrl, localToUtc, parseLiveDetail, parseStartlistPage, raceDayDate, raceTimezone, startlistUrl } from './startlist.mjs';
+import { clockSeconds, detailUrl, localToUtc, parseLiveDetail, parseStartlistPage, raceDayDate, raceTimezone, startlistUrl } from './startlist.mjs';
 
 export const STARTLIST_DDL = [
   `CREATE TABLE IF NOT EXISTS startlist_entries (
@@ -117,7 +117,7 @@ export async function removeOldStartlists(deps) {
 /** Athletes of a race who started less than 3 h ago and have no finish yet, least recently read first. */
 export async function racingAthletes(deps, raceId, now = Date.now()) {
   return deps.query(`
-    SELECT s.mika_idp, s.mika_event FROM startlist_entries s
+    SELECT s.mika_idp, s.mika_event, s.heat, s.start_at FROM startlist_entries s
     WHERE s.race_id = ? AND s.start_at IS NOT NULL AND s.start_at <= ? AND s.start_at > ?
       AND NOT EXISTS (SELECT 1 FROM hyrox_athlete_results r
                       WHERE r.mika_idp = s.mika_idp AND r.total_time IS NOT NULL AND r.total_time != '')
@@ -125,6 +125,23 @@ export async function racingAthletes(deps, raceId, now = Date.now()) {
       AND NOT (s.live IS NOT NULL AND json_extract(s.live, '$.last') IS NULL AND s.live_updated_at > ?)
     ORDER BY s.live_updated_at IS NOT NULL, s.live_updated_at`,
   [raceId, iso(now), iso(now - RACING_WINDOW_MS), iso(now - NO_SIGNAL_RETRY_MS)]);
+}
+
+/**
+ * Actual start and last timing mat in UTC. The page shows local clock times; the heat's local time
+ * and its UTC start (from the start list) give the offset, so no time zone is needed here.
+ */
+export function withUtcTimes(live, heat, heatStartUtc) {
+  const heatMs = Date.parse(heatStartUtc ?? '');
+  const startSec = clockSeconds(live.startTod);
+  const heatSec = clockSeconds(`${heat}:00`); // heat is hh:mm
+  if (!Number.isFinite(heatMs) || !Number.isFinite(startSec) || !Number.isFinite(heatSec)) return live;
+  let diff = startSec - heatSec;
+  if (diff > 43_200) diff -= 86_400; // around midnight
+  if (diff < -43_200) diff += 86_400;
+  const startedMs = heatMs + diff * 1000;
+  const lastMs = live.last ? startedMs + clockSeconds(live.last.elapsed) * 1000 : null;
+  return { ...live, startedAt: iso(startedMs), lastAt: lastMs ? iso(lastMs) : null };
 }
 
 /** Read detail pages of racing athletes until the deadline; store splits so far and position. */
@@ -137,7 +154,7 @@ export async function refreshRacing(deps, seasonSlug, raceId, deadline) {
     if (Date.now() >= deadline) break;
     const r = await deps.mika.get(detailUrl(seasonSlug, a.mika_event, a.mika_idp)).catch(() => null);
     if (!r?.text) continue;
-    const live = parseLiveDetail(r.text);
+    const live = withUtcTimes(parseLiveDetail(r.text), a.heat, a.start_at);
     pending.push({
       sql: 'UPDATE startlist_entries SET live = ?, live_updated_at = ? WHERE race_id = ? AND mika_idp = ?',
       args: [JSON.stringify(live), iso(Date.now()), raceId, a.mika_idp],
