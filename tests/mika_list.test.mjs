@@ -288,3 +288,50 @@ test('normalizeFinishTime: no time keeps the text, empty is null', () => {
   assert.equal(normalizeFinishTime('  '), null);
   assert.equal(normalizeFinishTime(undefined), null);
 });
+
+// ---------- Overall-list ownership ----------
+import { baseIdp, buildOwnerMap, reassignByOwner } from '../scripts/lib/mika_list.mjs';
+
+test('baseIdp strips the race suffix of Overall lists', () => {
+  assert.equal(baseIdp('LR3MS4JI5BDE89_BAR'), 'LR3MS4JI5BDE89');
+  assert.equal(baseIdp('LR3MS4JI5BDE89'), 'LR3MS4JI5BDE89');
+  assert.equal(baseIdp(null), '');
+});
+
+test('buildOwnerMap maps ids to their race and drops ids two races claim', () => {
+  const owner = buildOwnerMap([
+    { raceId: 'barcelona', idps: ['A_BAR', 'B_BAR', 'C_BAR'] },
+    { raceId: 'dublin', idps: ['C_DUB26', 'D_DUB26'] },
+  ]);
+  assert.equal(owner.get('A'), 'barcelona');
+  assert.equal(owner.get('D'), 'dublin');
+  assert.equal(owner.has('C'), false);
+});
+
+test('reassignByOwner moves results another race claims (Barcelona teams in Düsseldorf)', () => {
+  const owner = buildOwnerMap([{ raceId: 'barcelona', idps: ['X1_BAR'] }]);
+  const wave = [
+    { mika_idp: 'X1', race_id: 'dusseldorf', full_name: 'Anne Kirkegaard, Lea Gaardbo' },
+    ...Array.from({ length: 9 }, (_, i) => ({ mika_idp: `D${i}`, race_id: 'dusseldorf', full_name: `Team ${i}` })),
+  ];
+  const r = reassignByOwner(wave, 'dusseldorf', owner);
+  assert.equal(r.moved.length, 1);
+  assert.equal(r.moved[0].race_id, 'barcelona');
+  assert.equal(r.moved[0].moved_from, 'dusseldorf');
+  assert.equal(r.kept.length, 9);
+});
+
+test('reassignByOwner keeps everything when too much of a wave would move', () => {
+  const owner = buildOwnerMap([{ raceId: 'barcelona', idps: ['A_BAR', 'B_BAR', 'C_BAR'] }]);
+  const wave = ['A', 'B', 'C', 'D'].map((id) => ({ mika_idp: id, race_id: 'dusseldorf' }));
+  const r = reassignByOwner(wave, 'dusseldorf', owner);
+  assert.equal(r.moved.length, 0);
+  assert.equal(r.kept.length, 4);
+  assert.equal(r.skipped, 3);
+});
+
+test('reassignByOwner leaves results alone when no Overall list claims them', () => {
+  const r = reassignByOwner([{ mika_idp: 'Z', race_id: 'denver' }, { mika_idp: null, race_id: 'denver' }], 'denver', new Map());
+  assert.equal(r.kept.length, 2);
+  assert.equal(r.moved.length, 0);
+});

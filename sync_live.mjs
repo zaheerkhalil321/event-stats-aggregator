@@ -25,7 +25,8 @@ import dotenv from 'dotenv';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
-import { assignDistinctNames, extraWavesFor, isOverallWave, normalizeFinishTime, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { assignDistinctNames, baseIdp, extraWavesFor, isOverallWave, normalizeFinishTime, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
+import { raceOwners } from './scripts/lib/overall_owners.mjs';
 
 dotenv.config();
 
@@ -859,6 +860,45 @@ async function getRaceDivisionCounts(raceId) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Live Sync Orchestrator
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Which race a result belongs to (each race's Overall lists)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Map(result id -> race id) from the Overall lists of every race that runs at the same time as a
+ * race we sync. mika sometimes files results of one of them in another's day wave; the Overall
+ * list of the right race still names them.
+ */
+async function buildRaceOwners(seasonSlug, allGroups, targetGroups, sonstige) {
+  const today = new Date().toISOString().slice(0, 10);
+  const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  const span = (g) => { const r = raceForGroup(g.label); return { g, r, from: r.date, to: r.end_date || r.date }; };
+  const targeted = FORCE_RACE && FORCE_RACE.toLowerCase() !== 'all';
+  const active = targetGroups.map(span).filter(x => x.from && x.from <= today && (targeted || x.to >= daysAgo(3)));
+  if (!active.length) return new Map();
+  const overlapping = allGroups.map(span).filter(x => x.from && active.some(a => x.from <= a.to && x.to >= a.from));
+  const { owners, racesWithOverall } = await raceOwners(mika, seasonSlug, overlapping.map((x) => ({ raceId: x.r.id, group: x.g })), sonstige);
+  console.log(`🧭 Overall lists read for ${racesWithOverall} race(s) running at the same time: ${owners.size} results mapped to their race.`);
+  return owners;
+}
+
+/**
+ * Results that mika listed under the wrong race: move rows we already stored there to the right race
+ * (keeping their splits); drop the copy when the right race already has the result.
+ */
+async function relocateStoredResults(moved) {
+  for (const a of moved) {
+    const id = esc(baseIdp(a.mika_idp));
+    try {
+      await runQuery(`UPDATE hyrox_athlete_results SET race_id = ${esc(a.race_id)}
+        WHERE race_id = ${esc(a.moved_from)} AND mika_idp = ${id}
+          AND NOT EXISTS (SELECT 1 FROM hyrox_athlete_results o WHERE o.race_id = ${esc(a.race_id)} AND o.mika_idp = ${id})`);
+    } catch (err) {
+      console.log(`      ⚠️ could not move ${a.full_name} (${a.mika_idp}): ${err.message}`);
+    }
+    await runQuery(`DELETE FROM hyrox_athlete_results WHERE race_id = ${esc(a.moved_from)} AND mika_idp = ${id}`);
+  }
+}
+
 async function main() {
   const browser = await chromium.launch({
     headless: true,
@@ -926,6 +966,11 @@ async function main() {
       targetGroups = allOptgroups;
       console.log(`🎯 Scanning all ${targetGroups.length} Season 9 event groups...`);
     }
+
+    const resultOwners = await buildRaceOwners(seasonSlug, allOptgroups, targetGroups, sonstige).catch((err) => {
+      console.log(`⚠️ Overall lists could not be read (${err.message}); results stay in the race of their wave.`);
+      return new Map();
+    });
 
     for (const group of targetGroups) {
       console.log(`\n${'═'.repeat(60)}`);
@@ -1036,9 +1081,20 @@ async function main() {
               console.log(`      ⏱️ Pass time budget reached: ${needSplits.length - fetched} detail pages left for the next pass / backfill.`);
             }
 
-            // Upsert batch to Supabase
-            await upsertLiveAthletes(athletes);
-            totalRaceAthletes += athletes.length;
+            // Results another race's Overall list claims go to that race.
+            const { kept, moved, skipped } = reassignByOwner(athletes, race.id, resultOwners);
+            if (skipped) {
+              console.log(`      ⚠️ ${skipped} of ${athletes.length} results are claimed by another race's Overall list; too many to trust, kept in ${race.id}.`);
+            }
+            await upsertLiveAthletes(kept);
+            if (moved.length) {
+              const byRace = new Map();
+              for (const a of moved) byRace.set(a.race_id, [...(byRace.get(a.race_id) ?? []), a]);
+              console.log(`      🧭 ${moved.length} result(s) of [${waveText}] belong to another race: ${[...byRace].map(([r, l]) => `${l.length} -> ${r}`).join(', ')}`);
+              await relocateStoredResults(moved);
+              for (const list of byRace.values()) await upsertLiveAthletes(list);
+            }
+            totalRaceAthletes += kept.length;
           }
         }
       }

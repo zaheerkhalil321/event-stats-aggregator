@@ -19,7 +19,8 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createClient } from '@libsql/client';
 import { createMikaClient } from './lib/mika_http.mjs';
-import { divisionLabel, extraWavesFor, isOverallWave, parseListPage, parseSeasonGroups, resolveCalendarRace } from './lib/mika_list.mjs';
+import { baseIdp, divisionLabel, extraWavesFor, isOverallWave, parseListPage, parseSeasonGroups, resolveCalendarRace } from './lib/mika_list.mjs';
+import { raceOwners, waveItems } from './lib/overall_owners.mjs';
 
 dotenv.config();
 
@@ -80,7 +81,12 @@ async function countWave(wave, sex) {
   return lo * 100 + hiItems;
 }
 
-async function siteCounts(group, sonstige) {
+/**
+ * Site results per division. With an owner map (from the Overall lists of the races checked), a
+ * result that another race's Overall list claims is counted for that race instead (mika sometimes
+ * files a race's results in another race's day wave); those go into `transfers[raceId][division]`.
+ */
+async function siteCounts(group, sonstige, raceId, owners, transfers) {
   const waves = [...group.options, ...extraWavesFor(group, sonstige)].filter(
     (o) => !isOverallWave(o.val) && !/OVERALL/i.test(o.text) && o.text.trim().toUpperCase() !== 'ALL',
   );
@@ -89,11 +95,22 @@ async function siteCounts(group, sonstige) {
     const up = w.text.toUpperCase();
     const sexes = up.includes('DOUBLES') || up.includes('RELAY') ? ['M', 'W', 'X'] : ['M', 'W'];
     for (const sex of sexes) {
-      const n = await countWave(w.val, sex);
-      if (n > 0) {
-        const div = divisionLabel(w.text, sex);
-        byDivision[div] = (byDivision[div] ?? 0) + n;
+      const div = divisionLabel(w.text, sex);
+      let n;
+      if (owners.size === 0) {
+        n = await countWave(w.val, sex);
+      } else {
+        const items = (await waveItems(mika, SEASON, w.val, sex)).filter((i) => !isTestRow(i));
+        n = 0;
+        for (const it of items) {
+          const to = owners.get(baseIdp(it.idp));
+          if (to && to !== raceId) {
+            transfers[to] ??= {};
+            transfers[to][div] = (transfers[to][div] ?? 0) + 1;
+          } else n++;
+        }
       }
+      if (n > 0) byDivision[div] = (byDivision[div] ?? 0) + n;
     }
   }
   return byDivision;
@@ -162,15 +179,47 @@ async function main() {
   const sonstige = groups.find((g) => /sonstige/i.test(g.label));
   const report = [];
 
+  // 1. The races to check, matched to the calendar as of their own days.
+  const checks = [];
   for (const group of groups) {
     if (group === sonstige) continue;
     if (RACE && !group.label.toLowerCase().includes(RACE.toLowerCase())) continue;
-    // The calendar race this group belongs to, matched as of the race's own days.
     const candidates = races.filter((r) => String(r.date) >= FROM && String(r.date) <= TO && String(r.date) <= today);
     const race = candidates.find((r) => resolveCalendarRace(group.label, candidates, String(r.date), SEASON_LABEL)?.id === r.id);
-    if (!race) continue;
+    if (race) checks.push({ group, race });
+  }
 
-    let result = compare(await siteCounts(group, sonstige), await dbCounts(String(race.id)));
+  // 2. Which race each result belongs to, from the Overall lists of every race in the date range
+  //    (also when only one race is checked, so a race running the same weekend is seen).
+  const inRange = [];
+  for (const group of groups) {
+    if (group === sonstige) continue;
+    const candidates = races.filter((r) => String(r.date) >= FROM && String(r.date) <= TO && String(r.date) <= today);
+    const race = candidates.find((r) => resolveCalendarRace(group.label, candidates, String(r.date), SEASON_LABEL)?.id === r.id);
+    if (race && checks.some((c) => String(race.date) <= String(c.race.end_date ?? c.race.date) && String(race.end_date ?? race.date) >= String(c.race.date))) {
+      inRange.push({ raceId: String(race.id), group });
+    }
+  }
+  const { owners } = await raceOwners(mika, SEASON, inRange, sonstige);
+  console.log(`Overall lists of ${inRange.length} race(s) give ${owners.size} results a race.`);
+
+  // 3. Site counts per race (results moved to the race whose Overall list claims them).
+  const transfers = {};
+  for (const c of checks) c.site = await siteCounts(c.group, sonstige, String(c.race.id), owners, transfers);
+  // Races running at the same time that are not checked themselves can still hold results of a
+  // checked race in their waves: read them only for those transfers.
+  if (owners.size) {
+    for (const r of inRange) {
+      if (!checks.some((c) => String(c.race.id) === r.raceId)) await siteCounts(r.group, sonstige, r.raceId, owners, transfers);
+    }
+  }
+  for (const c of checks) {
+    for (const [div, n] of Object.entries(transfers[String(c.race.id)] ?? {})) c.site[div] = (c.site[div] ?? 0) + n;
+  }
+
+  // 4. Compare with the database, re-sync what is missing.
+  for (const { group, race, site } of checks) {
+    let result = compare(site, await dbCounts(String(race.id)));
     const overall = await overallCounts(group, sonstige);
     let overallRows = compareOverall(overall, await dbCounts(String(race.id)));
     const overallMissing = () => overallRows.reduce((a, r) => a + Math.max(0, -r.diff), 0);
@@ -186,13 +235,14 @@ async function main() {
       console.log(`↻ ${race.id}: ${result.missing} results missing, re-syncing "${group.label}"…`);
       const run = spawnSync('node', ['sync_live.mjs', `--race=${group.label}`, '--splits=0'], { stdio: 'inherit', env: process.env });
       fixed = run.status === 0;
-      result = compare(await siteCounts(group, sonstige), await dbCounts(String(race.id)));
+      result = compare(site, await dbCounts(String(race.id)));
       overallRows = compareOverall(overall, await dbCounts(String(race.id)));
       markMissing();
     }
-    report.push({ race: String(race.id), label: group.label, date: String(race.date), status: String(race.status), fixed, ...result, overall: overallRows });
+    const moved = Object.values(transfers[String(race.id)] ?? {}).reduce((a, n) => a + n, 0);
+    report.push({ race: String(race.id), label: group.label, date: String(race.date), status: String(race.status), fixed, movedIn: moved, ...result, overall: overallRows });
     const mark = result.missingOverLimit ? '❌' : result.extra > result.limit ? '⚠️ ' : '✅';
-    console.log(`${mark} ${String(race.id).padEnd(30)} site ${String(result.siteTotal).padStart(6)}  db ${String(result.dbTotal).padStart(6)}  missing ${String(result.missing).padStart(5)}  extra ${String(result.extra).padStart(5)}  | overall lists: missing ${result.overallMissing}`);
+    console.log(`${mark} ${String(race.id).padEnd(30)} site ${String(result.siteTotal).padStart(6)}  db ${String(result.dbTotal).padStart(6)}  missing ${String(result.missing).padStart(5)}  extra ${String(result.extra).padStart(5)}  | overall lists: missing ${result.overallMissing}${moved ? `  | ${moved} filed by mika under another race` : ''}`);
     for (const r of overallRows.filter((x) => x.diff < 0)) {
       console.log(`     overall ${(r.family + ' ' + r.sex).padEnd(26)} site ${String(r.site).padStart(6)}  db ${String(r.db).padStart(6)}  ${r.diff}`);
     }

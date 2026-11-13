@@ -360,3 +360,52 @@ export function assignDistinctNames(athletes, stored = {}) {
     return { ...a, full_name: name };
   });
 }
+
+// ---------- which race a result belongs to (Overall lists) ----------
+// mika sometimes files a race's results inside another race's day wave (Barcelona 2026: 37
+// Doubles Women teams sat in Düsseldorf's Thursday wave). The race's own Overall list still names
+// them, with the race code appended to the id ("LR3MS4JI5BDE89_BAR"). These helpers use the
+// Overall lists to put such results back in their race.
+
+// baseIdp (above) drops the race suffix that Overall lists add ("…_BAR" -> "…").
+
+/**
+ * entries: [{ raceId, idps: iterable }] from each race's Overall lists.
+ * Returns Map(baseIdp -> raceId). An id listed by two races is left out (we cannot tell).
+ */
+export function buildOwnerMap(entries) {
+  const owner = new Map();
+  const clash = new Set();
+  for (const { raceId, idps } of entries) {
+    for (const raw of idps) {
+      const id = baseIdp(raw);
+      if (!id || clash.has(id)) continue;
+      const prev = owner.get(id);
+      if (prev === undefined) owner.set(id, raceId);
+      else if (prev !== raceId) {
+        owner.delete(id);
+        clash.add(id);
+      }
+    }
+  }
+  return owner;
+}
+
+/**
+ * Split one wave's results into those that stay in raceId and those another race's Overall list
+ * claims. If more than maxShare of the wave would move, nothing moves (that points to a different
+ * problem, such as a wrong race mapping) and `skipped` is true.
+ */
+export function reassignByOwner(athletes, raceId, owner, { maxShare = 0.2 } = {}) {
+  const moved = [];
+  const kept = [];
+  for (const a of athletes) {
+    const to = a.mika_idp ? owner.get(baseIdp(a.mika_idp)) : undefined;
+    if (to && to !== raceId) moved.push({ ...a, race_id: to, moved_from: raceId });
+    else kept.push(a);
+  }
+  if (moved.length && moved.length > Math.max(1, athletes.length * maxShare)) {
+    return { kept: athletes, moved: [], skipped: moved.length };
+  }
+  return { kept, moved, skipped: 0 };
+}
