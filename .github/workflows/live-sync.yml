@@ -28,8 +28,14 @@ concurrency:
 
 jobs:
   live-sync:
-    name: ⚡ Scrape Live Weekend Heats
+    name: ⚡ Live heats (${{ matrix.region }})
     runs-on: ubuntu-latest
+    # One runner per region: each has its own IP, so its own mika rate limit, and a weekend with
+    # many races at once is shared out instead of queuing on one runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        region: [europe, asia, americas]
     # A race day is one long session (a pass every 10 minutes) instead of one cold start per hour.
     # Upstash triggers that arrive meanwhile wait in the concurrency queue and take over when it ends.
     timeout-minutes: 350
@@ -68,6 +74,7 @@ jobs:
           IN_RACE: ${{ github.event.inputs.race }}
           IN_SPLITS: ${{ github.event.inputs.splits || 'all' }}
           IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
+          REGION: ${{ matrix.region }}
         run: |
           # One pass every 10 minutes for up to ~5.5 hours while a race is active. Each pass stores the
           # list pages first (only waves whose count changed, plus a full read every hour), checks every
@@ -81,7 +88,13 @@ jobs:
             UNTIL=$(( START + 8 * 60 ))
             [ "$UNTIL" -gt "$SESSION_END" ] && UNTIL=$SESSION_END
             ARGS=(--splits="$IN_SPLITS" --until "$UNTIL")
-            [ -n "$IN_RACE" ] && ARGS+=(--race="$IN_RACE")
+            # A manual run for one race uses the europe runner only (it reads that race wherever it is).
+            if [ -n "$IN_RACE" ]; then
+              [ "$REGION" != "europe" ] && { echo "Manual single-race run happens on the europe runner."; break; }
+              ARGS+=(--race="$IN_RACE")
+            else
+              ARGS+=(--region="$REGION")
+            fi
             [ "$IN_DRY_RUN" = "true" ] && ARGS+=(--test)
             echo "::group::Pass $PASS ($(date -u +%H:%M) UTC)"
             node sync_live.mjs "${ARGS[@]}" || echo "⚠️ Pass $PASS failed; the next pass retries."
@@ -89,6 +102,8 @@ jobs:
 
             # Manual single-race or dry runs do one pass.
             if [ -n "$IN_RACE" ] || [ "$IN_DRY_RUN" = "true" ]; then break; fi
+            # Nothing of this region today or tomorrow: free the runner (the next hourly trigger checks again).
+            if [ -f .live-region-idle ]; then echo "No race of region $REGION running — ending this runner."; break; fi
             NEXT=$(( START + 10 * 60 ))
             if [ "$NEXT" -ge "$SESSION_END" ]; then echo "Session time budget reached."; break; fi
             # Stop as soon as no race is active any more (end of the race weekend).

@@ -28,6 +28,7 @@ import { createClient } from '@libsql/client';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
 import { assignDistinctNames, baseIdp, divisionLabel as waveDivision, extraWavesFor, isOverallWave, normalizeFinishTime, parseListPage, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 import { raceOwners } from './scripts/lib/overall_owners.mjs';
+import { raceRegion } from './scripts/lib/startlist.mjs';
 import { STARTLIST_DDL, raceInStartlistWindow, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
 
 dotenv.config();
@@ -63,6 +64,10 @@ const DEEP_SPLITS_LIMIT = splitsLimitArg ? (splitsLimitArg === 'all' || splitsLi
 const untilArg = process.argv.find(arg => arg.startsWith('--until='))?.split('=')[1]
                  || (process.argv.includes('--until') ? process.argv[process.argv.indexOf('--until') + 1] : null);
 const DETAIL_DEADLINE = untilArg ? parseInt(untilArg, 10) * 1000 : Infinity;
+
+// --region=europe|asia|americas: only the races of that region (one GitHub runner per region).
+const REGION = process.argv.find(arg => arg.startsWith('--region='))?.split('=')[1] || null;
+const REGION_IDLE_FILE = '.live-region-idle';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -1015,7 +1020,20 @@ async function main() {
       console.log(`🎯 Scanning all ${targetGroups.length} Season 9 event groups...`);
     }
 
-    const resultOwners = await buildRaceOwners(seasonSlug, allOptgroups, targetGroups, sonstige).catch((err) => {
+    if (REGION) {
+      targetGroups = targetGroups.filter(g => raceRegion(raceForGroup(g.label)) === REGION);
+      const inWindow = targetGroups.filter(g => raceInStartlistWindow(raceForGroup(g.label)));
+      console.log(`🌍 Region ${REGION}: ${targetGroups.length} race(s), ${inWindow.length} running today or tomorrow${inWindow.length ? `: ${inWindow.map(g => g.label).join(', ')}` : ''}.`);
+      // The workflow ends this region's session when nothing of the region is running.
+      try {
+        if (inWindow.length) fs.rmSync(REGION_IDLE_FILE, { force: true });
+        else fs.writeFileSync(REGION_IDLE_FILE, new Date().toISOString());
+      } catch { /* the session just keeps going */ }
+    }
+
+    // Races mika may mix up run in the same region (same weekend, same continent).
+    const ownerPool = REGION ? allOptgroups.filter(g => raceRegion(raceForGroup(g.label)) === REGION) : allOptgroups;
+    const resultOwners = await buildRaceOwners(seasonSlug, ownerPool, targetGroups, sonstige).catch((err) => {
       console.log(`⚠️ Overall lists could not be read (${err.message}); results stay in the race of their wave.`);
       return new Map();
     });

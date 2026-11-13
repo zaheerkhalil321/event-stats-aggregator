@@ -179,6 +179,19 @@ export function raceTimezone({ city, country_code: cc } = {}) {
   return byCity ?? COUNTRY_TZ[String(cc ?? '').toUpperCase()] ?? CITY_ONLY_TZ.find(([re]) => re.test(city ?? ''))?.[1] ?? null;
 }
 
+export const REGIONS = ['europe', 'asia', 'americas'];
+
+/**
+ * Which live-sync runner handles a race: each region runs on its own GitHub runner (its own IP, so
+ * its own mika rate limit). Europe also takes Africa and races without a known time zone.
+ */
+export function raceRegion(race) {
+  const tz = raceTimezone(race) ?? '';
+  if (/^America\//.test(tz) || tz === 'Pacific/Honolulu') return 'americas';
+  if (/^(Asia|Australia|Pacific)\//.test(tz)) return 'asia';
+  return 'europe';
+}
+
 /** A local wall-clock time ("2026-11-13", "17:50") in an IANA zone as a UTC ISO string. */
 export function localToUtc(date, hhmm, timeZone) {
   if (!date || !hhmm || !timeZone) return null;

@@ -10,7 +10,10 @@ names: `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` (see `.env`; never print the to
      (100 athletes/request), matching rows by name + finish time; progress in table `mika_discovery_log`.
   2. `scripts/backfill_splits.mjs` fetches each athlete's detail page (17 splits, station ranks,
      race replay, team members). Stops at `--max-db-mb` (workflow input, default 3000).
-- `.github/workflows/live-sync.yml` → `sync_live.mjs` (Playwright, hourly via Upstash, gated by `check_active_today.mjs`).
+- `.github/workflows/live-sync.yml` → `sync_live.mjs --region=europe|asia|americas` (one runner per region, each
+  its own IP; Playwright). Upstash triggers it hourly (GitHub's own cron runs hours late); a run is a ~5.5h session
+  with a pass every 10 min, gated by `check_active_today.mjs`. Live tracking (start lists, athletes on the course)
+  goes into `startlist_entries`: see `docs/live-tracking-plan.md`.
 - `.github/workflows/pipeline.yml` → `sync_events.mjs` (Monday calendar/races).
 - `.github/workflows/verify-counts.yml` → `scripts/verify_race_counts.mjs` (nightly 04:41 UTC): compares the
   last 21 days of races with results.hyrox.com per division, re-syncs races that miss results and opens/updates

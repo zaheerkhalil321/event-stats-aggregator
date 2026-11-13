@@ -75,3 +75,16 @@ test('a start list refresh removes only its own waves\' old entries', async () =
     assert.equal(c.args[0], 'HD_X');
   }
 });
+
+test('each race goes to one regional runner', async () => {
+  const { raceRegion } = await import('../scripts/lib/startlist.mjs');
+  assert.equal(raceRegion({ city: 'Barcelona', country_code: 'ES' }), 'europe');
+  assert.equal(raceRegion({ city: 'Dublin', country_code: 'XX' }), 'europe');
+  assert.equal(raceRegion({ city: 'Cairo', country_code: 'XX' }), 'europe');
+  assert.equal(raceRegion({ city: 'Seoul', country_code: 'KR' }), 'asia');
+  assert.equal(raceRegion({ city: 'Delhi', country_code: 'IN' }), 'asia');
+  assert.equal(raceRegion({ city: 'Abu Dhabi', country_code: 'AE' }), 'asia');
+  assert.equal(raceRegion({ city: 'Denver', country_code: 'US' }), 'americas');
+  assert.equal(raceRegion({ city: 'Mexico City', country_code: 'MX' }), 'americas');
+  assert.equal(raceRegion({ city: 'Atlantis', country_code: 'ZZ' }), 'europe');
+});
