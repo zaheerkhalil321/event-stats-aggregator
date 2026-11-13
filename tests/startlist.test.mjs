@@ -39,6 +39,8 @@ test('race day dates and heat times in UTC', () => {
   assert.equal(localToUtc('2026-11-14', '08:00', raceTimezone({ city: 'Denver', country_code: 'US' })), '2026-11-14T15:00:00.000Z');
   assert.equal(localToUtc('2026-03-29', '10:00', 'Europe/Berlin'), '2026-03-29T08:00:00.000Z'); // first day of summer time
   assert.equal(raceTimezone({ city: 'Atlantis', country_code: 'ZZ' }), null);
+  assert.equal(raceTimezone({ city: 'Dublin', country_code: 'XX' }), 'Europe/Dublin');
+  assert.equal(raceTimezone({ city: 'Cairo', country_code: 'XX' }), 'Africa/Cairo');
 });
 
 test('actual start and last timing mat in UTC from the heat start', async () => {

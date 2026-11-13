@@ -1270,7 +1270,8 @@ async function main() {
     // Athletes on the course first (up to 4 minutes, shared by the races), so their position is at most
     // one pass old; then detail pages of new finishers until the pass budget ends.
     if (liveRaces.length) {
-      const racingEnd = Math.min(DETAIL_DEADLINE, Date.now() + 4 * 60 * 1000);
+      // At least 2 minutes even when the lists ran past the pass budget (a start list refresh is slow).
+      const racingEnd = Math.max(Math.min(DETAIL_DEADLINE, Date.now() + 4 * 60 * 1000), Date.now() + 2 * 60 * 1000);
       for (const [i, race] of liveRaces.entries()) {
         const share = Date.now() + (racingEnd - Date.now()) / (liveRaces.length - i);
         try {

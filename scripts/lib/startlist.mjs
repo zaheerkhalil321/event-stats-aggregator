@@ -130,7 +130,7 @@ export function raceDayDate(startDate, endDate, dayName) {
 const COUNTRY_TZ = {
   AE: 'Asia/Dubai', AR: 'America/Argentina/Buenos_Aires', AT: 'Europe/Vienna', AU: 'Australia/Sydney',
   BE: 'Europe/Brussels', BR: 'America/Sao_Paulo', CA: 'America/Toronto', CH: 'Europe/Zurich', CL: 'America/Santiago',
-  CN: 'Asia/Shanghai', CO: 'America/Bogota', CZ: 'Europe/Prague', DE: 'Europe/Berlin', DK: 'Europe/Copenhagen',
+  CN: 'Asia/Shanghai', EG: 'Africa/Cairo', CO: 'America/Bogota', CZ: 'Europe/Prague', DE: 'Europe/Berlin', DK: 'Europe/Copenhagen',
   ES: 'Europe/Madrid', FI: 'Europe/Helsinki', FR: 'Europe/Paris', GB: 'Europe/London', UK: 'Europe/London',
   GR: 'Europe/Athens', HK: 'Asia/Hong_Kong', HU: 'Europe/Budapest', ID: 'Asia/Jakarta', IE: 'Europe/Dublin',
   IN: 'Asia/Kolkata', IT: 'Europe/Rome', JP: 'Asia/Tokyo', KR: 'Asia/Seoul', KW: 'Asia/Kuwait', MX: 'America/Mexico_City',
@@ -150,9 +150,33 @@ const CITY_TZ = [
   [/hawaii|honolulu/i, 'Pacific/Honolulu'],
 ];
 
+// Some races are stored without a real country ("XX"): fall back to the city.
+const CITY_ONLY_TZ = [
+  [/dublin|belfast/i, 'Europe/Dublin'], [/cairo/i, 'Africa/Cairo'],
+  [/london|manchester|birmingham|glasgow|cardiff|liverpool|leeds|edinburgh/i, 'Europe/London'],
+  [/paris|nice|lyon|marseille|bordeaux|lille|toulouse/i, 'Europe/Paris'],
+  [/berlin|hamburg|munich|münchen|cologne|köln|d[uü]sseldorf|frankfurt|stuttgart|karlsruhe|leipzig|hannover/i, 'Europe/Berlin'],
+  [/madrid|barcelona|valencia|m[aá]laga|bilbao|sevilla|seville/i, 'Europe/Madrid'],
+  [/amsterdam|rotterdam|utrecht|heerenveen|maastricht/i, 'Europe/Amsterdam'], [/brussels|bruxelles|gent|ghent|antwerp/i, 'Europe/Brussels'],
+  [/vienna|wien/i, 'Europe/Vienna'], [/zurich|zürich|geneva|basel/i, 'Europe/Zurich'], [/lisbon|lisboa|porto/i, 'Europe/Lisbon'],
+  [/milan|milano|rome|roma|turin|torino|verona|bologna/i, 'Europe/Rome'], [/stockholm|gothenburg/i, 'Europe/Stockholm'],
+  [/copenhagen/i, 'Europe/Copenhagen'], [/oslo/i, 'Europe/Oslo'], [/helsinki/i, 'Europe/Helsinki'], [/warsaw|krak[oó]w|pozna[nń]/i, 'Europe/Warsaw'],
+  [/prague/i, 'Europe/Prague'], [/athens/i, 'Europe/Athens'], [/istanbul/i, 'Europe/Istanbul'],
+  [/dubai|abu dhabi/i, 'Asia/Dubai'], [/doha/i, 'Asia/Qatar'], [/riyadh|jeddah/i, 'Asia/Riyadh'], [/kuwait/i, 'Asia/Kuwait'],
+  [/mumbai|delhi|bangalore|bengaluru|hyderabad|chennai|pune/i, 'Asia/Kolkata'],
+  [/singapore/i, 'Asia/Singapore'], [/hong kong/i, 'Asia/Hong_Kong'], [/shanghai|beijing|shenzhen|guangzhou|chengdu|hangzhou/i, 'Asia/Shanghai'],
+  [/taipei/i, 'Asia/Taipei'], [/tokyo|chiba|osaka|yokohama|nagoya/i, 'Asia/Tokyo'], [/seoul|incheon|busan/i, 'Asia/Seoul'],
+  [/bangkok/i, 'Asia/Bangkok'], [/kuala lumpur/i, 'Asia/Kuala_Lumpur'], [/jakarta|bali/i, 'Asia/Jakarta'], [/manila/i, 'Asia/Manila'],
+  [/sydney|melbourne/i, 'Australia/Sydney'], [/auckland|wellington/i, 'Pacific/Auckland'],
+  [/cape town|johannesburg/i, 'Africa/Johannesburg'], [/toronto|montreal|ottawa/i, 'America/Toronto'],
+  [/new york|boston|atlanta|miami|washington|philadelphia|orlando|tampa|charlotte/i, 'America/New_York'],
+  [/mexico city|ciudad de m[eé]xico|acapulco|guadalajara/i, 'America/Mexico_City'], [/s[aã]o paulo|rio de janeiro/i, 'America/Sao_Paulo'],
+  [/buenos aires/i, 'America/Argentina/Buenos_Aires'], [/santiago/i, 'America/Santiago'], [/bogot[aá]/i, 'America/Bogota'],
+];
+
 export function raceTimezone({ city, country_code: cc } = {}) {
   const byCity = CITY_TZ.find(([re]) => re.test(city ?? ''))?.[1];
-  return byCity ?? COUNTRY_TZ[String(cc ?? '').toUpperCase()] ?? null;
+  return byCity ?? COUNTRY_TZ[String(cc ?? '').toUpperCase()] ?? CITY_ONLY_TZ.find(([re]) => re.test(city ?? ''))?.[1] ?? null;
 }
 
 /** A local wall-clock time ("2026-11-13", "17:50") in an IANA zone as a UTC ISO string. */
