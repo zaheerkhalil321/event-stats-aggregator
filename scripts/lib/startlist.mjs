@@ -5,8 +5,10 @@ import { decodeEntities } from './mika_list.mjs';
 
 const stripTags = (s) => decodeEntities(String(s ?? '').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
 
+// Sorted by bib: mika's default order is not stable between pages (a wave of 680 came back as 580
+// different entries, 100 twice and 100 never). Bib numbers are unique, so pages do not overlap.
 export const startlistUrl = (wave, sex, page = 1) =>
-  `https://startlist.hyrox.com/?pid=startlist_list&lang=EN_CAP&event=${wave}&num_results=100&search[sex]=${sex}&page=${page}`;
+  `https://startlist.hyrox.com/?pid=startlist_list&lang=EN_CAP&event=${wave}&num_results=100&search[sex]=${sex}&search_sort=start_no&search_sort_order=ASC&page=${page}`;
 
 export const detailUrl = (seasonSlug, wave, idp) =>
   `https://results.hyrox.com/${seasonSlug}/?content=detail&event=${wave}&idp=${idp}&lang=EN_CAP`;

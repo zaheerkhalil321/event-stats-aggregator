@@ -88,3 +88,8 @@ test('each race goes to one regional runner', async () => {
   assert.equal(raceRegion({ city: 'Mexico City', country_code: 'MX' }), 'americas');
   assert.equal(raceRegion({ city: 'Atlantis', country_code: 'ZZ' }), 'europe');
 });
+
+test('start list pages are read in bib order (stable paging)', async () => {
+  const { startlistUrl } = await import('../scripts/lib/startlist.mjs');
+  assert.match(startlistUrl('HD_X', 'X', 2), /search_sort=start_no&search_sort_order=ASC&page=2$/);
+});
