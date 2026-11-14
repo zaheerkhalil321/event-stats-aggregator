@@ -1236,6 +1236,26 @@ const MASTER_RACE_DATES = {
   'stockholm-2026': { date: '2026-12-10', end_date: '2026-12-13', status: 'upcoming' },
 };
 
+// Real dates already in hyrox_races (from the official calendar or an earlier fix), used for races
+// missing from MASTER_RACE_DATES so they don't fall back to a YYYY-12-31 placeholder.
+const isPlaceholderDate = (d) => !d || String(d).slice(5, 10) === '12-31';
+let knownRaceDates = null;
+async function loadKnownRaceDates() {
+  if (knownRaceDates) return knownRaceDates;
+  knownRaceDates = {};
+  try {
+    const rows = await runQuery(`SELECT id, date, end_date FROM hyrox_races WHERE date IS NOT NULL AND date NOT LIKE '%-12-31%'`);
+    for (const r of rows || []) {
+      const date = String(r.date).slice(0, 10);
+      const end = isPlaceholderDate(r.end_date) ? date : String(r.end_date).slice(0, 10);
+      knownRaceDates[r.id] = { date, end_date: end };
+    }
+  } catch (e) {
+    console.warn('   ⚠️ Could not load saved race dates:', e.message.slice(0, 100));
+  }
+  return knownRaceDates;
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helper: Dynamically discover official races from site
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1266,6 +1286,7 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
   });
 
   const today = new Date().toISOString().slice(0, 10);
+  const savedDates = await loadKnownRaceDates();
 
   return raceOptions.map((rawName) => {
     const match = rawName.match(/^(\d{4})\s+(.+)$/);
@@ -1278,7 +1299,7 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
     }
     const country = getCountryByCity(cityName);
 
-    const master = MASTER_RACE_DATES[raceId] || {};
+    const master = MASTER_RACE_DATES[raceId] || savedDates[raceId] || {};
     const exactDate = master.date || `${year}-12-31`;
     const exactEndDate = master.end_date || exactDate;
     const status = master.status || (exactDate > today ? 'upcoming' : 'completed');
