@@ -1271,7 +1271,7 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
     const match = rawName.match(/^(\d{4})\s+(.+)$/);
     const year = match ? match[1] : '2025';
     const cityName = match ? match[2] : rawName;
-    const cleanCity = cityName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const cleanCity = cityName.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     let raceId = `${cleanCity}-${year}`;
     if (cleanCity === 'washington-dc' && seasonLabel === '26/27') {
       raceId = `washington-dc-sep-${year}`;

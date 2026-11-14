@@ -295,7 +295,7 @@ export async function syncOfficialCalendar(page) {
 
     const cleanName = item.title.replace(/BUY TICKETS|SOLD OUT|WAITLIST/gi, '').trim();
     const city = cleanName.replace(/.*HYROX\s+/i, '').replace(/\s+\d{4}.*/, '').trim() || 'Global';
-    const slug = `${city.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${year}`;
+    const slug = `${city.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${year}`;
     const season = (year === '2026' || year === '2027') ? '26/27' : '25/26';
     const isPast = new Date(endDate) < new Date();
     const countryObj = getCountryByCity(city);
