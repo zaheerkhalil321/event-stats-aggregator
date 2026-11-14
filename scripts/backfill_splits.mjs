@@ -357,9 +357,17 @@ async function main() {
     return Math.round(Number(r.bytes) / 1e6);
   };
 
+  // Rows added after this id (by the live sync) are new: the 'details' phase gives way to them.
+  const maxId = async () => Number((await client.execute('SELECT MAX(id) AS m FROM hyrox_athlete_results')).rows[0]?.m ?? 0);
+  const newRowsWithoutSplits = async (afterId) => (await client.execute(
+    `SELECT 1 FROM hyrox_athlete_results a WHERE a.id > ${afterId} AND a.mika_idp IS NOT NULL AND a.mika_idp != '' AND ${PENDING.splits} LIMIT 1`,
+  )).rows.length > 0;
+
   sweeps:
   for (let sweep = 1; ; sweep++) {
     let sweepWritten = 0;
+    const sweepStartId = await maxId();
+    for (const phase of ['splits', 'details']) {
     for (const season of SEASONS) {
       let lastMaxId = 0;
       for (let pass = 1; ; pass++) {
@@ -372,10 +380,10 @@ async function main() {
             break sweeps;
           }
         }
-        console.log(`\n🔍 [Sweep ${sweep} · season ${season} · pass ${pass}] Querying pending athletes (cursor a.id > ${lastMaxId})...`);
-        const athletes = await fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog);
+        console.log(`\n🔍 [Sweep ${sweep} · ${phase} · season ${season} · pass ${pass}] Querying pending athletes (cursor a.id > ${lastMaxId})...`);
+        const athletes = await fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog, phase);
         if (athletes.length === 0) {
-          console.log(`   ✅ Nothing pending for season ${season}.`);
+          console.log(`   ✅ Nothing pending (${phase}) for season ${season}.`);
           break;
         }
         lastMaxId = athletes[athletes.length - 1].id;
@@ -390,7 +398,12 @@ async function main() {
         console.log(`   Cumulative Enriched So Far: ${totalEnriched.toLocaleString()}`);
 
         if (LIMIT || IS_TEST) break sweeps;
+        if (phase === 'details' && FOREVER && (await newRowsWithoutSplits(sweepStartId))) {
+          console.log('\n🆕 New results without splits arrived: fetching those first.');
+          continue sweeps;
+        }
       }
+    }
     }
     if (!FOREVER) break;
     if (sweepWritten === 0) {
@@ -420,7 +433,15 @@ function seasonFilter(season) {
 }
 
 // Pending = has a mika_idp, and either no splits yet or never got station ranks / replay data.
-async function fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog) {
+// What a row still needs from its detail page. 'splits' first (rows without splits or station ranks:
+// new races), then 'details' (rows the live sync filled with splits but without the race replay,
+// team members, wave and gender rank, which only this parser reads).
+const PENDING = {
+  splits: `(a.run_1 IS NULL OR a.run_1 = '' OR a.station_ranks IS NULL)`,
+  details: `a.cumulative_times IS NULL`,
+};
+
+async function fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog, phase = 'splits') {
   let query = `
     SELECT
       a.id, a.race_id, a.full_name, a.division, a.mika_idp${hasMikaEvent ? ', a.mika_event' : ''},
@@ -430,7 +451,7 @@ async function fetchPending(season, lastMaxId, hasMikaEvent, hasDiscoveryLog) {
     ${hasDiscoveryLog ? 'LEFT JOIN mika_discovery_log d ON d.race_id = a.race_id' : ''}
     WHERE a.id > ${lastMaxId}
       AND a.mika_idp IS NOT NULL AND a.mika_idp != ''
-      AND (a.run_1 IS NULL OR a.run_1 = '' OR a.station_ranks IS NULL)
+      AND ${PENDING[phase]}
   `;
   if (TARGET_RACE) query += ` AND a.race_id = ${esc(TARGET_RACE)}`;
   if (TARGET_DIV) query += ` AND a.division = ${esc(TARGET_DIV)}`;

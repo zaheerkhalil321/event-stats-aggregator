@@ -58,6 +58,29 @@ describe('Athlete enrichment SQL', () => {
     assert.equal((await row(4)).station_ranks, '{}');
   });
 
+  it('TC59: a page without a race replay marks the replay as read, without wiping one that exists', async () => {
+    await db.execute(`INSERT INTO hyrox_athlete_results (id, run_1) VALUES (5, '00:04:00')`);
+    await db.execute(`INSERT INTO hyrox_athlete_results (id, run_1, cumulative_times) VALUES (6, '00:04:00', '{"Run 1":"00:04:00"}')`);
+    await db.execute(updateSql({ id: 5, run_1: '00:04:00' }));
+    await db.execute(updateSql({ id: 6, run_1: '00:04:00' }));
+    await db.execute(`INSERT INTO hyrox_athlete_results (id) VALUES (7)`);
+    await db.execute(updateSql({ id: 7, dns: true }));
+    assert.equal((await row(5)).cumulative_times, '{}', 'not picked again for the replay');
+    assert.equal((await row(6)).cumulative_times, '{"Run 1":"00:04:00"}');
+    assert.equal((await row(7)).cumulative_times, '{}');
+  });
+
+  it('TC60: a live-synced doubles row gets its members, replay and a nationality from the page', async () => {
+    await db.execute(`INSERT INTO hyrox_athlete_results (id, run_1, station_ranks, nationality) VALUES (8, '00:04:10', '{"skierg":3}', 'XX')`);
+    await db.execute(updateSql({ id: 8, run_1: '00:04:10', nationality: 'ARG', team_members: '[{"label":"Member 1","name":"Vinent, Lucas (ARG)"}]',
+      cumulative_times: '{"Run 1":"00:04:10"}', start_wave: 'HD_X', station_ranks: '{"skierg":3}' }));
+    const r = await row(8);
+    assert.equal(r.nationality, 'ARG');
+    assert.match(r.team_members, /Vinent/);
+    assert.equal(r.cumulative_times, '{"Run 1":"00:04:10"}');
+    assert.equal(r.start_wave, 'HD_X');
+  });
+
   it('TC58: rejects a non-numeric id', () => {
     assert.throws(() => updateSql({ id: '1; DROP TABLE x' }));
   });

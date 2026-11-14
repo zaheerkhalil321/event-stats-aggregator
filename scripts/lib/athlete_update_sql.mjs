@@ -3,6 +3,8 @@
  *
  * Existing values are never overwritten with NULL: rows selected only because they lack station
  * ranks may already hold splits from another source, and a DNS page must not wipe them.
+ * A page read without a race replay stores cumulative_times '{}' (empty, but read), so the row is
+ * not picked again for it.
  */
 
 export function esc(val) {
@@ -14,7 +16,7 @@ const SPLIT_AND_INFO_COLUMNS = [
   'run_1', 'skierg', 'run_2', 'sled_push', 'run_3', 'sled_pull', 'run_4', 'burpee_jumps',
   'run_5', 'rowing', 'run_6', 'farmers_carry', 'run_7', 'sandbag_lunges', 'run_8', 'wall_balls',
   'roxzone', 'run_total', 'best_run_lap', 'bib_number', 'age_group', 'start_wave', 'start_time',
-  'team_members', 'cumulative_times',
+  'team_members',
 ];
 
 const intOrNull = (n) => (Number.isInteger(n) ? String(n) : 'NULL');
@@ -35,6 +37,7 @@ export function updateSql(u) {
         age_group = COALESCE(${esc(u.age_group)}, age_group),
         team_members = COALESCE(${esc(u.team_members)}, team_members),
         station_ranks = COALESCE(station_ranks, '{}'),
+        cumulative_times = COALESCE(cumulative_times, '{}'),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${id};
     `;
@@ -50,6 +53,7 @@ export function updateSql(u) {
       gender_rank = COALESCE(${intOrNull(u.gender_rank)}, gender_rank),
       age_group_rank = COALESCE(${intOrNull(u.age_group_rank)}, age_group_rank),
       station_ranks = COALESCE(${esc(u.station_ranks)}, station_ranks, '{}'),
+      cumulative_times = COALESCE(${esc(u.cumulative_times)}, cumulative_times, '{}'),
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id};
   `;
