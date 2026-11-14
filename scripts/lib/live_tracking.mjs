@@ -102,16 +102,26 @@ export async function readStartlist(deps, race, waves, owners = new Map()) {
   let complete = true;
   // Waves the site answered with another race's list (it does that for a wave it does not know).
   const foreign = new Set();
+  // Waves whose rows name no wave at all (the link format changed?): not trusted, nothing stored or removed.
+  const unverified = new Set();
   for (const opt of startlistWaves(waves)) {
     for (const sex of sexesFor(opt.text)) {
       for (let page = 1; page <= 60; page++) {
         const r = await deps.mika.get(startlistUrl(opt.val, sex, page));
         if (!r?.text) { complete = false; break; }
         const items = parseStartlistPage(r.text);
-        const own = items.filter((it) => !it.event || it.event === opt.val);
+        // Only rows whose link names this very wave are kept; a row without a wave is not trusted.
+        const own = items.filter((it) => it.event === opt.val);
         if (items.length && !own.length) {
-          foreign.add(opt.val);
-          deps.log(`   ⚠️ Start list for ${opt.val} (${opt.text}) came back as another race's list (${items[0].event}); ignored.`);
+          const other = items.find((it) => it.event)?.event;
+          if (other) {
+            foreign.add(opt.val);
+            deps.log(`   ⚠️ Start list for ${opt.val} (${opt.text}) came back as another race's list (${other}); ignored.`);
+          } else {
+            unverified.add(opt.val);
+            complete = false;
+            deps.log(`   ⚠️ Start list rows for ${opt.val} (${opt.text}) name no wave; ignored (did the page change?).`);
+          }
           break;
         }
         for (const it of own) {
@@ -133,7 +143,7 @@ export async function readStartlist(deps, race, waves, owners = new Map()) {
       }
     }
   }
-  return { rows, complete, foreign };
+  return { rows, complete, foreign, unverified };
 }
 
 /** Store a race's start list (every 3 h). Rows that left the start list are removed after a full read. */
@@ -149,7 +159,8 @@ export async function syncStartlist(deps, race, waves, owners, { force = false, 
     );
     if (last?.at && now - Date.parse(last.at) < STARTLIST_REFRESH_MS) return { skipped: true };
   }
-  const { rows, complete, foreign } = await readStartlist(deps, race, waves, owners);
+  const { rows, complete, foreign, unverified } = await readStartlist(deps, race, waves, owners);
+  const problems = { foreign: [...foreign], unverified: [...unverified] };
   // Entries stored earlier from a wave that now turns out to serve another race's list are wrong.
   let dropped = 0;
   if (foreign.size) {
@@ -159,7 +170,7 @@ export async function syncStartlist(deps, race, waves, owners, { force = false, 
     dropped = Number(res[0]?.n ?? 0);
     if (dropped) await deps.batch([{ sql: `DELETE FROM startlist_entries WHERE ${where}`, args: ids }]);
   }
-  if (!rows.length) return { stored: 0, dropped };
+  if (!rows.length) return { stored: 0, dropped, ...problems };
   const stamp = iso(now);
   const stmts = rows.map((r) => ({
     sql: `INSERT INTO startlist_entries (race_id, mika_idp, mika_event, division, full_name, bib_number, age_group, day, heat, start_at, updated_at)
@@ -180,7 +191,7 @@ export async function syncStartlist(deps, race, waves, owners, { force = false, 
     removed = Number(res[0]?.n ?? 0);
     if (removed) await deps.batch([{ sql: `DELETE FROM startlist_entries WHERE ${where}`, args: [...ids, stamp] }]);
   }
-  return { stored: rows.length, removed, dropped, complete };
+  return { stored: rows.length, removed, dropped, complete, ...problems };
 }
 
 /** Start lists of races that ended over 7 days ago are not needed any more (results keep the rest). */
@@ -222,11 +233,18 @@ export function withUtcTimes(live, heat, heatStartUtc) {
   return { ...live, startedAt: iso(startedMs), lastAt: lastMs ? iso(lastMs) : null };
 }
 
+/** Fewest detail pages read before "all of them empty" counts as a warning. */
+export const BLANK_ALERT_MIN_READS = 20;
+/** True when enough pages were read and none showed a timing mat: the start list probably does not match the race. */
+export const looksUnmatched = ({ read = 0, blank = 0 }) => read >= BLANK_ALERT_MIN_READS && blank === read;
+
 /** Read detail pages of racing athletes until the deadline; store splits so far and position. */
+
 export async function refreshRacing(deps, seasonSlug, raceId, deadline) {
   const list = await racingAthletes(deps, raceId);
   const started = Date.now();
   let read = 0;
+  let blank = 0; // pages that show no timing mat at all
   let pending = [];
   const flush = async () => { if (pending.length) await deps.batch(pending); pending = []; };
   for (const a of list) {
@@ -234,6 +252,7 @@ export async function refreshRacing(deps, seasonSlug, raceId, deadline) {
     const r = await deps.mika.get(detailUrl(seasonSlug, a.mika_event, a.mika_idp)).catch(() => null);
     if (!r?.text) continue;
     const live = withUtcTimes(parseLiveDetail(r.text), a.heat, a.start_at);
+    if (!live.last && !live.finished) blank++;
     pending.push({
       sql: 'UPDATE startlist_entries SET live = ?, live_updated_at = ? WHERE race_id = ? AND mika_idp = ?',
       args: [JSON.stringify(live), iso(Date.now()), raceId, a.mika_idp],
@@ -242,5 +261,5 @@ export async function refreshRacing(deps, seasonSlug, raceId, deadline) {
     if (pending.length >= 25) await flush();
   }
   await flush();
-  return { racing: list.length, read, seconds: (Date.now() - started) / 1000 };
+  return { racing: list.length, read, blank, seconds: (Date.now() - started) / 1000 };
 }

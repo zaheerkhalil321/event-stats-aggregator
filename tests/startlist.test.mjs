@@ -95,6 +95,59 @@ test('a wave answered with another race\'s start list is ignored and its old ent
   assert.deepEqual(del.args, ['H_LR3MS4JI1710']);
 });
 
+test('start list rows that name no wave are not trusted: nothing stored, nothing removed', async () => {
+  const { syncStartlist } = await import('../scripts/lib/live_tracking.mjs');
+  const page = fixture('startlist-page.html').replace(/([?&;])event=[A-Za-z0-9_]+/g, '$1x=1');
+  const calls = [];
+  const deps = {
+    mika: { get: async () => ({ text: page }) },
+    query: async (sql, args) => { calls.push({ sql, args }); return [{ n: 5, at: null }]; },
+    batch: async (stmts) => { for (const s of stmts) calls.push(s); },
+    log: () => {},
+  };
+  const race = { id: 'dusseldorf-2026', city: 'Düsseldorf', country_code: 'DE', date: '2026-11-11', end_date: '2026-11-15' };
+  const out = await syncStartlist(deps, race, [{ val: 'HD_LR3MS4JI19A2', text: 'HYROX DOUBLES - Friday' }], new Map(), { force: true });
+  assert.equal(out.stored, 0);
+  assert.deepEqual(out.unverified, ['HD_LR3MS4JI19A2']);
+  assert.deepEqual(out.foreign, []);
+  assert.ok(!calls.some((c) => /INSERT|DELETE/.test(c.sql)), 'nothing written or removed');
+});
+
+test('a wave answered with another race is reported as foreign', async () => {
+  const { syncStartlist } = await import('../scripts/lib/live_tracking.mjs');
+  const page = fixture('startlist-page.html');
+  const deps = {
+    mika: { get: async () => ({ text: page }) },
+    query: async () => [{ n: 0, at: null }],
+    batch: async () => {},
+    log: () => {},
+  };
+  const race = { id: 'delhi-2026', city: 'Delhi', country_code: 'IN', date: '2026-11-14', end_date: '2026-11-16' };
+  const out = await syncStartlist(deps, race, [{ val: 'H_LR3MS4JI1710', text: 'HYROX - Saturday' }], new Map(), { force: true });
+  assert.deepEqual(out.foreign, ['H_LR3MS4JI1710']);
+});
+
+test('live detail pages that all show nothing raise a warning', async () => {
+  const { refreshRacing, looksUnmatched, BLANK_ALERT_MIN_READS } = await import('../scripts/lib/live_tracking.mjs');
+  const now = Date.now();
+  const athletes = Array.from({ length: BLANK_ALERT_MIN_READS }, (_, i) => ({
+    mika_idp: `IDP${i}`, mika_event: 'H_X', heat: '10:00', start_at: new Date(now - 30 * 60_000).toISOString(),
+  }));
+  const deps = (html) => ({
+    mika: { get: async () => ({ text: html }) },
+    query: async () => athletes,
+    batch: async () => {},
+  });
+  const empty = await refreshRacing(deps('<html><body>No results</body></html>'), 'season-9', 'delhi-2026', now + 60_000);
+  assert.equal(empty.read, BLANK_ALERT_MIN_READS);
+  assert.equal(empty.blank, empty.read);
+  assert.ok(looksUnmatched(empty));
+  const real = await refreshRacing(deps(fixture('live-detail.html')), 'season-9', 'dusseldorf-2026', now + 60_000);
+  assert.equal(real.blank, 0);
+  assert.ok(!looksUnmatched(real));
+  assert.ok(!looksUnmatched({ read: 5, blank: 5 }), 'too few pages to tell');
+});
+
 test('each race goes to one regional runner', async () => {
   const { raceRegion } = await import('../scripts/lib/startlist.mjs');
   assert.equal(raceRegion({ city: 'Barcelona', country_code: 'ES' }), 'europe');

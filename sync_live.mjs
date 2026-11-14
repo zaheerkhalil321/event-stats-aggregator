@@ -29,7 +29,7 @@ import { createMikaClient } from './scripts/lib/mika_http.mjs';
 import { assignDistinctNames, baseIdp, divisionLabel as waveDivision, extraWavesFor, isOverallWave, normalizeFinishTime, parseListPage, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 import { raceOwners } from './scripts/lib/overall_owners.mjs';
 import { raceRegion } from './scripts/lib/startlist.mjs';
-import { STALE_MINUTES, STARTLIST_DDL, raceInStartlistWindow, racingFreshness, recordPassStats, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
+import { STALE_MINUTES, STARTLIST_DDL, looksUnmatched, raceInStartlistWindow, racingFreshness, recordPassStats, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
 import { laneFilter } from './scripts/lib/live_planner.mjs';
 
 dotenv.config();
@@ -1218,6 +1218,8 @@ async function main() {
           const sl = await syncStartlist(liveDeps, race, [...group.options, ...extraWaves], resultOwners);
           if (sl.skipped) console.log('   📋 Start list stored less than 3 h ago; not read again yet.');
           else console.log(`   📋 Start list: ${sl.stored} entries stored${sl.removed ? `, ${sl.removed} no longer listed removed` : ''}${sl.complete === false ? ' (some pages failed; nothing removed)' : ''}.`);
+          if (sl.foreign?.length) console.log(`::warning title=Start list from another race::${race.id}: the site answered wave(s) ${sl.foreign.join(', ')} with another race's list; ignored${sl.dropped ? `, ${sl.dropped} old entries dropped` : ''}.`);
+          if (sl.unverified?.length) console.log(`::warning title=Start list not verified::${race.id}: rows of wave(s) ${sl.unverified.join(', ')} name no wave (page format changed?); nothing stored. Check scripts/lib/startlist.mjs.`);
           liveRaces.push(race);
         } catch (err) {
           console.log(`   ⚠️ Start list of ${race.id} failed: ${err.message}`);
@@ -1306,6 +1308,7 @@ async function main() {
         try {
           const r = await refreshRacing(liveDeps, seasonSlug, race.id, Math.min(racingEnd, share));
           if (r.racing) console.log(`🏃 ${race.id}: ${r.racing} on the course, ${r.read} detail pages read in ${Math.round(r.seconds)} s.`);
+          if (looksUnmatched(r)) console.log(`::warning title=Live pages empty::${race.id}: ${r.read} detail pages read, none shows a timing mat. The start list probably does not belong to this race.`);
           // How old the positions are now; the planner and a warning use it.
           const fresh = await racingFreshness(liveDeps, race.id);
           if (!IS_TEST) {
