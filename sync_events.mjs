@@ -1120,7 +1120,7 @@ const MASTER_RACE_DATES = {
   'warsaw-2025': { date: '2025-04-12', end_date: '2025-04-13', status: 'completed' },
   'sharjah-2025': { date: '2025-04-12', end_date: '2025-04-12', status: 'completed' },
   'taipei-2025': { date: '2025-04-12', end_date: '2025-04-12', status: 'completed' },
-  'paris-2025': { date: '2025-04-18', end_date: '2025-04-20', status: 'completed' },
+  'paris-2025': { date: '2025-10-22', end_date: '2025-10-26', status: 'completed' }, // Fitness Park HYROX Paris (April was paris-spring-2025)
   'miami-beach-2025': { date: '2025-04-19', end_date: '2025-04-19', status: 'completed' },
   'barcelona-2025': { date: '2025-04-25', end_date: '2025-04-27', status: 'completed' },
   'heerenveen-2025': { date: '2025-05-09', end_date: '2025-05-11', status: 'completed' },
@@ -1158,7 +1158,7 @@ const MASTER_RACE_DATES = {
   'madrid-2025': { date: '2025-11-27', end_date: '2025-11-30', status: 'completed' },
   'utrecht-2025': { date: '2025-11-28', end_date: '2025-11-30', status: 'completed' },
   'singapore-2025': { date: '2025-11-29', end_date: '2025-11-30', status: 'completed' },
-  'johannesburg-i-2025': { date: '2025-11-29', end_date: '2025-11-30', status: 'completed' },
+  'johannesburg-i-2025': { date: '2025-03-01', end_date: '2025-03-01', status: 'completed' }, // season 24/25; November is johannesburg-fall-2025
   'rio-de-janeiro-2025': { date: '2025-11-29', end_date: '2025-11-29', status: 'completed' },
   'london-excel-2025': { date: '2025-12-04', end_date: '2025-12-07', status: 'completed' },
   'verona-2025': { date: '2025-12-05', end_date: '2025-12-07', status: 'completed' },
@@ -1238,6 +1238,16 @@ const MASTER_RACE_DATES = {
 
 // Real dates already in hyrox_races (from the official calendar or an earlier fix), used for races
 // missing from MASTER_RACE_DATES so they don't fall back to a YYYY-12-31 placeholder.
+// Dropdown entries whose race is stored under another id (or that never had results): registering
+// them again would bring back empty copies in the race list.
+const DUPLICATE_RACE_IDS = new Set([
+  'rotterdam-2025', // results are under rotterdam-spring-2025
+  'apac-championship-brisbane-2026',
+  'beijing-i-2026',
+  'emea-london-olympia-2026',
+  'red-bull-monday-night-shift-hyrox-invitational-2026',
+]);
+
 const isPlaceholderDate = (d) => !d || String(d).slice(5, 10) === '12-31';
 let knownRaceDates = null;
 async function loadKnownRaceDates() {
@@ -1292,7 +1302,7 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
     const match = rawName.match(/^(\d{4})\s+(.+)$/);
     const year = match ? match[1] : '2025';
     const cityName = match ? match[2] : rawName;
-    const cleanCity = cityName.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const cleanCity = cityName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     let raceId = `${cleanCity}-${year}`;
     if (cleanCity === 'washington-dc' && seasonLabel === '26/27') {
       raceId = `washington-dc-sep-${year}`;
@@ -1319,7 +1329,7 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
       season: seasonLabel,
       status: status,
     };
-  });
+  }).filter((race) => !DUPLICATE_RACE_IDS.has(race.id));
 }
 
 async function upsertRaceHeader(race) {
