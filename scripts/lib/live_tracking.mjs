@@ -100,13 +100,21 @@ export async function readStartlist(deps, race, waves, owners = new Map()) {
   if (!tz) deps.log(`   ⚠️ No time zone known for ${race.city} (${race.country_code}); heats get no start time.`);
   const rows = [];
   let complete = true;
+  // Waves the site answered with another race's list (it does that for a wave it does not know).
+  const foreign = new Set();
   for (const opt of startlistWaves(waves)) {
     for (const sex of sexesFor(opt.text)) {
       for (let page = 1; page <= 60; page++) {
         const r = await deps.mika.get(startlistUrl(opt.val, sex, page));
         if (!r?.text) { complete = false; break; }
         const items = parseStartlistPage(r.text);
-        for (const it of items) {
+        const own = items.filter((it) => !it.event || it.event === opt.val);
+        if (items.length && !own.length) {
+          foreign.add(opt.val);
+          deps.log(`   ⚠️ Start list for ${opt.val} (${opt.text}) came back as another race's list (${items[0].event}); ignored.`);
+          break;
+        }
+        for (const it of own) {
           const date = raceDayDate(race.date, race.end_date, it.day ?? opt.text.split('-').pop());
           rows.push({
             race_id: owners.get(baseIdp(it.idp)) ?? owners.get(it.idp) ?? race.id,
@@ -125,7 +133,7 @@ export async function readStartlist(deps, race, waves, owners = new Map()) {
       }
     }
   }
-  return { rows, complete };
+  return { rows, complete, foreign };
 }
 
 /** Store a race's start list (every 3 h). Rows that left the start list are removed after a full read. */
@@ -141,8 +149,17 @@ export async function syncStartlist(deps, race, waves, owners, { force = false, 
     );
     if (last?.at && now - Date.parse(last.at) < STARTLIST_REFRESH_MS) return { skipped: true };
   }
-  const { rows, complete } = await readStartlist(deps, race, waves, owners);
-  if (!rows.length) return { stored: 0 };
+  const { rows, complete, foreign } = await readStartlist(deps, race, waves, owners);
+  // Entries stored earlier from a wave that now turns out to serve another race's list are wrong.
+  let dropped = 0;
+  if (foreign.size) {
+    const ids = [...foreign];
+    const where = `mika_event IN (${ids.map(() => '?').join(', ')})`;
+    const res = await deps.query(`SELECT COUNT(*) AS n FROM startlist_entries WHERE ${where}`, ids);
+    dropped = Number(res[0]?.n ?? 0);
+    if (dropped) await deps.batch([{ sql: `DELETE FROM startlist_entries WHERE ${where}`, args: ids }]);
+  }
+  if (!rows.length) return { stored: 0, dropped };
   const stamp = iso(now);
   const stmts = rows.map((r) => ({
     sql: `INSERT INTO startlist_entries (race_id, mika_idp, mika_event, division, full_name, bib_number, age_group, day, heat, start_at, updated_at)
@@ -163,7 +180,7 @@ export async function syncStartlist(deps, race, waves, owners, { force = false, 
     removed = Number(res[0]?.n ?? 0);
     if (removed) await deps.batch([{ sql: `DELETE FROM startlist_entries WHERE ${where}`, args: [...ids, stamp] }]);
   }
-  return { stored: rows.length, removed, complete };
+  return { stored: rows.length, removed, dropped, complete };
 }
 
 /** Start lists of races that ended over 7 days ago are not needed any more (results keep the rest). */

@@ -13,7 +13,11 @@ export const startlistUrl = (wave, sex, page = 1) =>
 export const detailUrl = (seasonSlug, wave, idp) =>
   `https://results.hyrox.com/${seasonSlug}/?content=detail&event=${wave}&idp=${idp}&lang=EN_CAP`;
 
-/** Rows of one start list page: { idp, name, bib, ageGroup, day, heat ("17:50"), heatLabel }. */
+/**
+ * Rows of one start list page: { idp, event, name, bib, ageGroup, day, heat ("17:50"), heatLabel }.
+ * event is the wave the row belongs to (from its link): for a wave the site does not know it serves
+ * another race's list instead, so callers compare it with the wave they asked for.
+ */
 export function parseStartlistPage(html) {
   const rows = [];
   for (const li of String(html).split(/<li class="[^"]*list-group-item[^"]*row[^"]*">/).slice(1)) {
@@ -26,6 +30,7 @@ export function parseStartlistPage(html) {
     const heatLabel = field('Startwave');
     rows.push({
       idp,
+      event: li.match(/[?&;]event=([A-Za-z0-9_]+)/)?.[1] ?? null,
       name: stripTags(li.match(/<h4[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i)?.[1]),
       bib: field('Bib no\\.') ?? field('Bib'),
       ageGroup: field('Age Group'),

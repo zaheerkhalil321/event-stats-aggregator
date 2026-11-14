@@ -9,7 +9,7 @@ test('start list rows: id, bib, age group, day and heat', () => {
   const rows = parseStartlistPage(fixture('startlist-page.html'));
   assert.equal(rows.length, 3);
   assert.deepEqual(rows[0], {
-    idp: 'LR3MS4JI5BAE2C', name: 'INHYE CHOI, QINGDONG MA', bib: '182046', ageGroup: '35-39',
+    idp: 'LR3MS4JI5BAE2C', event: 'HD_LR3MS4JI19A2', name: 'INHYE CHOI, QINGDONG MA', bib: '182046', ageGroup: '35-39',
     day: 'Friday', heat: '18:20', heatLabel: '18:20 HYROX DOUBLES MIXED',
   });
 });
@@ -64,7 +64,7 @@ test('a start list refresh removes only its own waves\' old entries', async () =
   };
   const race = { id: 'dusseldorf-2026', city: 'Düsseldorf', country_code: 'DE', date: '2026-11-11', end_date: '2026-11-15' };
   const owners = new Map([['LR3MS4JI5BAE2C', 'barcelona-nov-2026']]);
-  await syncStartlist(deps, race, [{ val: 'HD_X', text: 'HYROX DOUBLES - Friday' }, { val: 'H_OVERALL', text: 'HYROX - Overall' }], owners, { force: true });
+  await syncStartlist(deps, race, [{ val: 'HD_LR3MS4JI19A2', text: 'HYROX DOUBLES - Friday' }, { val: 'H_OVERALL', text: 'HYROX - Overall' }], owners, { force: true });
   const inserts = calls.filter((c) => /^\s*INSERT/.test(c.sql));
   assert.ok(inserts.some((c) => c.args[0] === 'barcelona-nov-2026'), 'claimed entry stored under its race');
   const cleanup = calls.filter((c) => /DELETE|COUNT/.test(c.sql));
@@ -72,8 +72,27 @@ test('a start list refresh removes only its own waves\' old entries', async () =
   for (const c of cleanup) {
     assert.match(c.sql, /mika_event IN \(\?\)/);
     assert.doesNotMatch(c.sql, /race_id/);
-    assert.equal(c.args[0], 'HD_X');
+    assert.equal(c.args[0], 'HD_LR3MS4JI19A2');
   }
+});
+
+test('a wave answered with another race\'s start list is ignored and its old entries dropped', async () => {
+  const { syncStartlist } = await import('../scripts/lib/live_tracking.mjs');
+  const page = fixture('startlist-page.html'); // rows of HD_LR3MS4JI19A2
+  const calls = [];
+  const deps = {
+    mika: { get: async () => ({ text: page }) },
+    query: async (sql, args) => { calls.push({ sql, args }); return [{ n: 1507, at: null }]; },
+    batch: async (stmts) => { for (const s of stmts) calls.push(s); },
+    log: () => {},
+  };
+  const race = { id: 'delhi-2026', city: 'Delhi', country_code: 'IN', date: '2026-11-14', end_date: '2026-11-16' };
+  const out = await syncStartlist(deps, race, [{ val: 'H_LR3MS4JI1710', text: 'HYROX - Saturday' }], new Map(), { force: true });
+  assert.equal(out.stored, 0);
+  assert.equal(out.dropped, 1507);
+  assert.ok(!calls.some((c) => /^\s*INSERT/.test(c.sql)), 'nothing stored');
+  const del = calls.find((c) => /DELETE/.test(c.sql));
+  assert.deepEqual(del.args, ['H_LR3MS4JI1710']);
 });
 
 test('each race goes to one regional runner', async () => {
