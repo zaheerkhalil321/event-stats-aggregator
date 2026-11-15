@@ -9,7 +9,7 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import { createClient } from '@libsql/client';
-import { estimateLoad, laneMatrix, peakOnCourse, planLanes } from './lib/live_planner.mjs';
+import { estimateLoad, laneMatrix, peakOnCourse, planLanes, raceFinished } from './lib/live_planner.mjs';
 import { raceRegion } from './lib/startlist.mjs';
 
 export async function planFromDatabase(db, now = Date.now()) {
@@ -46,10 +46,13 @@ export async function planFromDatabase(db, now = Date.now()) {
       peak,
       stats: s ? { list_seconds: s.list_seconds != null ? Number(s.list_seconds) : null, seconds_per_page: s.seconds_per_page != null ? Number(s.seconds_per_page) : null } : null,
     });
-    return { id, name: String(r.name).replace(/^HYROX\s+/i, '').replace(/\s+\d{4}$/, ''), region: raceRegion(r), load, peak };
+    const finished = raceFinished({ heatStarts: startsOf.get(id) ?? [], endDate: r.end_date ?? r.date, now });
+    return { id, name: String(r.name).replace(/^HYROX\s+/i, '').replace(/\s+\d{4}$/, ''), region: raceRegion(r), load, peak, finished };
   });
-  const lanes = planLanes(planned);
-  return { lanes: laneMatrix(lanes, new Map(planned.map((p) => [p.id, p.name]))), races: planned };
+  // Finished races get no lane (and lane 1 skips them too): passes stay short for races still running.
+  const lanes = planLanes(planned.filter((p) => !p.finished));
+  const skip = planned.filter((p) => p.finished).map((p) => p.id);
+  return { lanes: laneMatrix(lanes, new Map(planned.map((p) => [p.id, p.name])), skip), races: planned };
 }
 
 async function main() {
@@ -68,7 +71,7 @@ async function main() {
   try {
     const db = createClient({ url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN });
     const { lanes, races } = await planFromDatabase(db);
-    for (const r of races) console.log(`  ${r.id.padEnd(28)} ${r.region.padEnd(9)} peak on course ${String(r.peak).padStart(4)}  ~${r.load} s/pass`);
+    for (const r of races) console.log(`  ${r.id.padEnd(28)} ${r.region.padEnd(9)} ${r.finished ? 'finished — no live sync' : `peak on course ${String(r.peak).padStart(4)}  ~${r.load} s/pass`}`);
     for (const l of lanes) console.log(`Lane ${l.lane} (~${l.load} s/pass): ${l.label.replace(/^\d+: /, '')}  ${l.args}`);
     write(lanes);
   } catch (err) {

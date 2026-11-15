@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateLoad, laneFilter, laneMatrix, peakOnCourse, planLanes, LANE_BUDGET_SECONDS, MAX_LANES } from '../scripts/lib/live_planner.mjs';
+import { estimateLoad, laneFilter, laneMatrix, peakOnCourse, planLanes, raceFinished, LANE_BUDGET_SECONDS, MAX_LANES } from '../scripts/lib/live_planner.mjs';
 
 const T0 = Date.parse('2026-11-14T08:00:00Z');
 const at = (min) => new Date(T0 + min * 60_000).toISOString();
@@ -97,3 +97,28 @@ test('load: learned numbers win over the estimate', () => {
   assert.equal(estimateLoad({ waves: 10, peak: 200 }), 60 + 90);
   assert.equal(estimateLoad({ waves: 10, peak: 200, stats: { list_seconds: 30, seconds_per_page: 0.3 } }), 30 + 60);
 });
+
+describe('finished races', () => {
+  const now = Date.parse('2026-11-15T22:00:00Z');
+  it('is over on its last day once the last heat started more than 3 hours ago', () => {
+    assert.equal(raceFinished({ heatStarts: ['2026-11-15T08:00:00Z', '2026-11-15T17:30:00Z'], endDate: '2026-11-15', now }), true);
+  });
+  it('keeps a race whose last heat is recent or still to come', () => {
+    assert.equal(raceFinished({ heatStarts: ['2026-11-15T20:30:00Z'], endDate: '2026-11-15', now }), false);
+    assert.equal(raceFinished({ heatStarts: ['2026-11-16T09:00:00Z'], endDate: '2026-11-16', now }), false);
+  });
+  it('keeps a race with days still to come, even when today\'s heats are over', () => {
+    assert.equal(raceFinished({ heatStarts: ['2026-11-15T10:00:00Z'], endDate: '2026-11-16', now }), false);
+  });
+  it('keeps a race without a start list', () => {
+    assert.equal(raceFinished({ heatStarts: [], endDate: '2026-11-15', now }), false);
+  });
+  it('lane 1 skips finished races instead of taking them as "everything else"', () => {
+    const m = laneMatrix([{ lane: 1, races: ['denver'], load: 100 }, { lane: 2, races: ['dublin'], load: 90 }], new Map(), ['seoul', 'cairo']);
+    assert.equal(m[0].args, '--exclude=dublin,seoul,cairo');
+    assert.equal(m[1].args, '--races=dublin');
+    const solo = laneMatrix([{ lane: 1, races: ['denver'], load: 100 }], new Map(), ['seoul']);
+    assert.equal(solo[0].args, '--exclude=seoul');
+  });
+});
+

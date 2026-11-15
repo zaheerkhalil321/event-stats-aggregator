@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { reconnectingClient, isConnectionError } from '../scripts/lib/db_retry.mjs';
+import { reconnectingClient, isConnectionError, isBusyError } from '../scripts/lib/db_retry.mjs';
 
 const dropped = (code) => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error(code), { code }) });
 
@@ -35,4 +35,28 @@ describe('reconnecting database client', () => {
     assert.equal(isConnectionError(Object.assign(new TypeError('fetch failed'), { cause: new Error('other side closed') })), true);
     assert.equal(isConnectionError(new Error('SQLITE_CONSTRAINT')), false);
   });
+
+  it('waits and retries when the database is locked, on the same client', async () => {
+    let made = 0, calls = 0;
+    const db = reconnectingClient(() => {
+      made++;
+      return { execute: async () => { calls++; if (calls < 3) throw new Error('SQLITE_BUSY: SQLite error: database is locked'); return { rows: [] }; } };
+    }, { delayMs: 1, log: () => {} });
+    await db.execute('INSERT 1');
+    assert.equal(calls, 3);
+    assert.equal(made, 1);
+  });
+
+  it('retries batches too', async () => {
+    let calls = 0;
+    const db = reconnectingClient(() => ({ batch: async (stmts, mode) => { calls++; if (calls === 1) throw new Error('SQLITE_BUSY: database is locked'); return [stmts.length, mode]; } }), { delayMs: 1, log: () => {} });
+    assert.deepEqual(await db.batch(['a', 'b'], 'write'), [2, 'write']);
+    assert.equal(calls, 2);
+  });
+
+  it('tells a locked database from other errors', () => {
+    assert.equal(isBusyError(new Error('SQLITE_BUSY: SQLite error: database is locked')), true);
+    assert.equal(isBusyError(new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed')), false);
+  });
 });
+

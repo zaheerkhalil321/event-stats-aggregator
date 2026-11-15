@@ -25,6 +25,7 @@ import dotenv from 'dotenv';
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 import { createClient } from '@libsql/client';
+import { reconnectingClient } from './scripts/lib/db_retry.mjs';
 import { createMikaClient } from './scripts/lib/mika_http.mjs';
 import { assignDistinctNames, baseIdp, divisionLabel as waveDivision, extraWavesFor, isOverallWave, normalizeFinishTime, parseListPage, reassignByOwner, resolveCalendarRace } from './scripts/lib/mika_list.mjs';
 import { raceOwners } from './scripts/lib/overall_owners.mjs';
@@ -52,7 +53,10 @@ const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF;
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
 
-const turso = (TURSO_URL && TURSO_TOKEN) ? createClient({ url: TURSO_URL, authToken: TURSO_TOKEN }) : null;
+// Waits out "database is locked" (another job writing) and dropped connections instead of failing the pass.
+const turso = (TURSO_URL && TURSO_TOKEN)
+  ? reconnectingClient(() => createClient({ url: TURSO_URL, authToken: TURSO_TOKEN }), { retries: 4, delayMs: 1500 })
+  : null;
 
 const IS_TEST = process.argv.includes('--test') || process.argv.includes('--dry-run');
 const FORCE_RACE = process.argv.find(arg => arg.startsWith('--race='))?.split('=')[1]

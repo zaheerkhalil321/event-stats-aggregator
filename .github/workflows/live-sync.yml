@@ -35,6 +35,7 @@ jobs:
     outputs:
       active: ${{ steps.gatekeeper.outputs.active }}
       matrix: ${{ steps.plan.outputs.matrix }}
+      deadline: ${{ steps.deadline.outputs.deadline }}
     steps:
       - name: 📦 Checkout repository
         uses: actions/checkout@v4
@@ -54,6 +55,13 @@ jobs:
       - name: 📥 Install dependencies
         if: steps.gatekeeper.outputs.active == 'true'
         run: npm install --no-audit --no-fund
+
+      # One end time for every lane of this run: the next run waits in the concurrency queue until
+      # the last lane ends, so a lane that ran on alone would leave the other races without updates.
+      - name: ⏱️ Session end time shared by all lanes
+        id: deadline
+        if: steps.gatekeeper.outputs.active == 'true'
+        run: echo "deadline=$(( $(date +%s) + 330 * 60 ))" >> "$GITHUB_OUTPUT"
 
       - name: 🧭 Share the races out over lanes
         id: plan
@@ -101,12 +109,13 @@ jobs:
           IN_SPLITS: ${{ github.event.inputs.splits || 'all' }}
           IN_DRY_RUN: ${{ github.event.inputs.dry_run }}
           LANE_ARGS: ${{ matrix.args }}
+          RUN_DEADLINE: ${{ needs.plan.outputs.deadline }}
         run: |
           # One pass every 10 minutes for up to ~5.5 hours while a race is active. Each pass stores the
           # list pages first (only waves whose count changed, plus a full read every hour), then reads
           # where the athletes on the course are, checks every race/division against the site, and opens
           # detail pages of new finishers until --until. Splits left over go to the splits backfill.
-          SESSION_END=$(( $(date +%s) + 330 * 60 ))
+          SESSION_END=${RUN_DEADLINE:-$(( $(date +%s) + 330 * 60 ))}
           PASS=1
           while :; do
             START=$(date +%s)
@@ -116,7 +125,10 @@ jobs:
             [ -n "$LANE_ARGS" ] && ARGS+=("$LANE_ARGS")
             [ "$IN_DRY_RUN" = "true" ] && ARGS+=(--test)
             echo "::group::Pass $PASS ($(date -u +%H:%M) UTC)"
-            node sync_live.mjs "${ARGS[@]}" || echo "⚠️ Pass $PASS failed; the next pass retries."
+            # A pass may not run past the shared end time (plus a minute to finish its writes).
+            LEFT=$(( SESSION_END + 60 - $(date +%s) ))
+            [ "$LEFT" -lt 60 ] && LEFT=60
+            timeout --signal=TERM "${LEFT}s" node sync_live.mjs "${ARGS[@]}" || echo "⚠️ Pass $PASS failed or ran out of time; the next pass retries."
             echo "::endgroup::"
 
             # Manual single-race or dry runs do one pass.

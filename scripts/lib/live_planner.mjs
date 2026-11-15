@@ -29,6 +29,18 @@ export function peakOnCourse(heatStarts, from, hours = 6, onCourseMinutes = 90) 
 }
 
 /**
+ * True when a race's live sync is over: today (UTC) is its last day or later, and its last heat
+ * started more than `afterHours` ago. A race without a start list is kept (the list may still come),
+ * and so is a race with days still to come, whose next day's heats may not be listed yet.
+ */
+export function raceFinished({ heatStarts = [], endDate = null, now = Date.now(), afterHours = 3 }) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (!endDate || String(endDate).slice(0, 10) > today) return false;
+  const last = Math.max(...heatStarts.map((s) => Date.parse(s)).filter(Number.isFinite));
+  return Number.isFinite(last) && last < now - afterHours * 3_600_000;
+}
+
+/**
  * Seconds one pass of a race takes. Learned when the live sync measured it (stats), else from
  * the start list: the list pages of its waves plus a detail page for everyone on the course.
  */
@@ -62,9 +74,12 @@ export function planLanes(races, { budget = LANE_BUDGET_SECONDS, maxLanes = MAX_
   return lanes.filter((l) => l.races.length || l.lane === 1).map(({ lane, races: ids, load }) => ({ lane, races: ids, load }));
 }
 
-/** Matrix entries for the workflow: lane 1 takes its races plus everything no other lane took. */
-export function laneMatrix(lanes, names = new Map()) {
-  const others = (lane) => lanes.filter((l) => l.lane !== lane).flatMap((l) => l.races);
+/**
+ * Matrix entries for the workflow: lane 1 takes its races plus everything no other lane took,
+ * except `skip` (races whose live sync is over).
+ */
+export function laneMatrix(lanes, names = new Map(), skip = []) {
+  const others = (lane) => [...lanes.filter((l) => l.lane !== lane).flatMap((l) => l.races), ...skip];
   return lanes.map((l) => {
     const label = l.races.map((id) => names.get(id) ?? id).join(' + ') || 'other races';
     const args = l.lane === 1
