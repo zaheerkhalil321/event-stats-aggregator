@@ -18,6 +18,7 @@ import dotenv from 'dotenv';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createClient } from '@libsql/client';
+import { reconnectingClient } from './lib/db_retry.mjs';
 import { createMikaClient } from './lib/mika_http.mjs';
 import { baseIdp, divisionLabel, extraWavesFor, isOverallWave, parseListPage, parseSeasonGroups, resolveCalendarRace } from './lib/mika_list.mjs';
 import { raceOwners, waveItems } from './lib/overall_owners.mjs';
@@ -43,7 +44,8 @@ const FIX = flag('fix');
 const MIN_GAP = Number(arg('threshold', '5'));
 const BASE = `https://results.hyrox.com/${SEASON}/`;
 
-const db = createClient({ url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN });
+// Reconnects when the connection drops while a re-sync runs (it can take 40+ minutes).
+const db = reconnectingClient(() => createClient({ url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN }));
 const mika = createMikaClient({ rate: Number(arg('rate', '1.5')), maxRate: 3, log: () => {} });
 
 
