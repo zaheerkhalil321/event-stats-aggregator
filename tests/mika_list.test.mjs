@@ -180,6 +180,8 @@ describe('resolveCalendarRace', () => {
 describe('isOverallWave', () => {
   it('flags combined lists that repeat other waves', () => {
     assert.equal(isOverallWave('H_MEX26_OVERALL'), true);
+    assert.equal(isOverallWave('HMR_NLAOveralll'), true);
+    assert.equal(isOverallWave('HD1_LR3MS4JI163B'), false);
     assert.equal(isOverallWave('HD_MEX26_OVERALL_2'), true);
     assert.equal(isOverallWave('ALL__H_HA_HD_LR3MS4JI1802'), true);
     assert.equal(isOverallWave('ALL__HE_LR3MS4JI179B'), true);

@@ -8,6 +8,7 @@
  *   node scripts/verify_race_counts.mjs --race "Mexico City"  # one race (label contains this text)
  *   node scripts/verify_race_counts.mjs --fix                 # re-sync races with missing results
  *   node scripts/verify_race_counts.mjs --json report.json --markdown report.md
+ *   node scripts/verify_race_counts.mjs --season season-7 --season-label 24/25 --from 2024-06-01   # an older season (report only)
  *
  * A race counts as "missing" when the site has more results than the database by more than
  * --threshold (default: 5 results or 0.5%, whichever is larger). Combined "Overall" and "ALL" waves
@@ -40,7 +41,12 @@ const today = new Date().toISOString().slice(0, 10);
 const FROM = arg('from', new Date(Date.now() - 21 * 86_400_000).toISOString().slice(0, 10));
 const TO = arg('to', today);
 const RACE = arg('race');
-const FIX = flag('fix');
+// Re-syncing goes through sync_live.mjs, which reads the current season only. Older seasons are
+// checked and reported; their gaps are fixed by hand (another importer could file results under
+// the wrong race id).
+const CURRENT_SEASON = 'season-9';
+const FIX = flag('fix') && SEASON === CURRENT_SEASON;
+if (flag('fix') && !FIX) console.log(`--fix is only for ${CURRENT_SEASON}; ${SEASON} is checked and reported only.`);
 const MIN_GAP = Number(arg('threshold', '5'));
 const BASE = `https://results.hyrox.com/${SEASON}/`;
 
@@ -57,9 +63,29 @@ async function listPage(wave, sex, page) {
   return parseListPage(r.text);
 }
 
+/** Each result once: some day lists (e.g. 2025 Valencia) show every athlete twice. */
+export function uniqueItems(items) {
+  const seen = new Set();
+  return items.filter((i) => {
+    const key = i.idp ? baseIdp(i.idp) : `${i.name}|${i.time ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Results of one wave and sex: exact counter when mika gives one, else a search over page numbers. */
 async function countWave(wave, sex) {
   const first = await listPage(wave, sex, 1);
+  if (uniqueItems(first.items).length < first.items.length) {
+    // Repeated rows: page counts would double, so read every page and count each result once.
+    const items = [...first.items];
+    for (let p = 2, last = first; last.items.length === 100; p++) {
+      last = await listPage(wave, sex, p);
+      items.push(...last.items);
+    }
+    return uniqueItems(items.filter((i) => !isTestRow(i))).length;
+  }
   const real = first.items.filter((i) => !isTestRow(i)).length;
   if (first.items.length < 100) return real;
   if (first.total && !first.totalIsLowerBound) return first.total;
@@ -102,7 +128,7 @@ async function siteCounts(group, sonstige, raceId, owners, transfers) {
       if (owners.size === 0) {
         n = await countWave(w.val, sex);
       } else {
-        const items = (await waveItems(mika, SEASON, w.val, sex)).filter((i) => !isTestRow(i));
+        const items = uniqueItems((await waveItems(mika, SEASON, w.val, sex)).filter((i) => !isTestRow(i)));
         n = 0;
         for (const it of items) {
           const to = owners.get(baseIdp(it.idp));
@@ -132,7 +158,7 @@ export function familyOfDivision(division) {
 }
 
 async function overallCounts(group, sonstige) {
-  const waves = [...group.options, ...extraWavesFor(group, sonstige)].filter((o) => /_OVERALL(_\d+)?$/i.test(o.val));
+  const waves = [...group.options, ...extraWavesFor(group, sonstige)].filter((o) => isOverallWave(o.val) && !/^ALL__/i.test(o.val));
   const out = {};
   for (const w of waves) {
     const family = FAMILY_OF_PREFIX[w.val.split('_')[0]];
@@ -257,7 +283,7 @@ async function main() {
   if (arg('json')) fs.writeFileSync(arg('json'), JSON.stringify({ checkedAt: new Date().toISOString(), from: FROM, to: TO, races: report }, null, 2));
   if (arg('markdown')) {
     const lines = [
-      `Checked ${report.length} races (${FROM} to ${TO}) on ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
+      `Checked ${report.length} races of ${SEASON} (${FROM} to ${TO}) on ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
       '',
       bad.length ? `**${bad.length} race(s) still miss results:**` : 'All races match the results site.',
       '',

@@ -1,0 +1,100 @@
+name: 🗂️ Verify past seasons
+
+# Every week: compare every race of the past seasons with results.hyrox.com, division by division
+# (scripts/verify_race_counts.mjs, list pages only). Report only: gaps in older seasons are fixed by
+# hand, because re-syncing goes through the current-season importer. Races that miss results are
+# listed in one issue labelled "data-check-history"; it is closed when everything matches again.
+on:
+  schedule:
+    - cron: '17 22 * * 0'   # Sunday 22:17 UTC, after the weekend's races
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Only this season (default: all past seasons)'
+        required: false
+        default: 'all'
+        type: choice
+        options: ['all', 'season-4', 'season-5', 'season-6', 'season-7', 'season-8']
+      race:
+        description: 'Only races whose label contains this text (e.g. Valencia)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+# Shares the queue with the nightly check, so the results site is never read by both at once.
+concurrency:
+  group: verify-counts
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+
+      - name: Compare past seasons with results.hyrox.com
+        id: verify
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          IN_SEASON: ${{ github.event.inputs.season || 'all' }}
+          IN_RACE: ${{ github.event.inputs.race }}
+        run: |
+          declare -A LABEL=([season-4]=21/22 [season-5]=22/23 [season-6]=23/24 [season-7]=24/25 [season-8]=25/26)
+          if [ "$IN_SEASON" = "all" ]; then SEASONS=(season-4 season-5 season-6 season-7 season-8); else SEASONS=("$IN_SEASON"); fi
+          : > report.md
+          worst=0
+          for s in "${SEASONS[@]}"; do
+            ARGS=(--season "$s" --season-label "${LABEL[$s]}" --from 2021-01-01 --markdown "report-$s.md")
+            [ -n "$IN_RACE" ] && ARGS+=(--race "$IN_RACE")
+            set +e
+            node scripts/verify_race_counts.mjs "${ARGS[@]}"
+            code=$?
+            set -e
+            echo "### $s (${LABEL[$s]})" >> report.md
+            if [ -f "report-$s.md" ]; then cat "report-$s.md" >> report.md; else echo "Check failed (exit $code)." >> report.md; fi
+            echo >> report.md
+            # 2 = races miss results; anything else but 0 is a failure of the check itself.
+            if [ "$code" = "2" ] && [ "$worst" = "0" ]; then worst=2; fi
+            if [ "$code" != "0" ] && [ "$code" != "2" ]; then worst=$code; fi
+          done
+          echo "exit_code=$worst" >> "$GITHUB_OUTPUT"
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$worst" != "0" ] && [ "$worst" != "2" ]; then exit "$worst"; fi
+
+      - name: Open or update the data-check-history issue
+        if: steps.verify.outputs.exit_code == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create data-check-history --color D93F0B --description "Past seasons differ from results.hyrox.com" 2>/dev/null || true
+          num=$(gh issue list --label data-check-history --state open --json number --jq '.[0].number')
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file report.md
+          else
+            gh issue create --title "Past seasons: results missing compared with results.hyrox.com" --label data-check-history --body-file report.md
+          fi
+
+      - name: Close the data-check-history issue when everything matches
+        if: steps.verify.outputs.exit_code == '0' && github.event.inputs.race == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for num in $(gh issue list --label data-check-history --state open --json number --jq '.[].number'); do
+            gh issue close "$num" --comment "All past-season races match results.hyrox.com again ($(date -u +%F))."
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-history-report
+          path: report*.md
+          if-no-files-found: ignore
