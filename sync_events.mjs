@@ -27,6 +27,7 @@ import { createClient } from '@libsql/client';
 import * as fs from 'fs';
 import { readFileSync, existsSync } from 'fs';
 import { syncOfficialCalendar } from './sync_calendar.mjs';
+import { clockTime } from './scripts/lib/clock_time.mjs';
 
 dotenv.config();
 
@@ -62,6 +63,9 @@ const FORCE_DIV = getArg('division');
 // HYROX Seasons to sync
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SEASONS = [
+  // Older seasons are only synced when asked for with --season (to import a missing race).
+  { slug: 'season-5', label: '22/23', onlyWhenForced: true },
+  { slug: 'season-6', label: '23/24', onlyWhenForced: true },
   { slug: 'season-7', label: '24/25' },
   { slug: 'season-8', label: '25/26' },
   { slug: 'season-9', label: '26/27' },
@@ -343,6 +347,8 @@ function parseSplits(html) {
     run_8: getSplit('Running 8'),
     wall_balls: getSplit('Wall Balls'),
     roxzone: getSplit('Roxzone'),
+    // Elite lists show no finish time; the detail page has it as "Overall Time" (e.g. "53:47.18").
+    detail_total_time: clockTime(tableData['Overall Time'] || tableData['Total'] || tableData['Finish Time']),
   };
 
   // If roxzone is missing or dash, calculate mathematically from Total Time - (8 Runs + 8 Workouts)
@@ -944,7 +950,7 @@ async function batchUpsert(athletes) {
     const rows = chunk.map((a) => `(
       ${esc(a.race_id)},   ${esc(a.full_name)},       ${esc(a.bib_number)},
       ${esc(a.nationality)}, ${esc(a.gender)},         ${esc(a.age_group)},   ${esc(a.division)},
-      ${esc(a.total_time)},  ${a.overall_rank ?? 'NULL'}, ${a.overall_rank ?? 'NULL'}, ${a.overall_rank ?? 'NULL'},
+      ${esc(a.total_time || a.detail_total_time)},  ${a.overall_rank ?? 'NULL'}, ${a.overall_rank ?? 'NULL'}, ${a.overall_rank ?? 'NULL'},
       ${esc(a.run_1)},  ${esc(a.run_2)},  ${esc(a.run_3)},  ${esc(a.run_4)},
       ${esc(a.run_5)},  ${esc(a.run_6)},  ${esc(a.run_7)},  ${esc(a.run_8)},
       ${esc(a.skierg)}, ${esc(a.sled_push)}, ${esc(a.sled_pull)}, ${esc(a.burpee_jumps)},
@@ -1234,6 +1240,10 @@ const MASTER_RACE_DATES = {
 
   // 2026 Future / Upcoming
   'stockholm-2026': { date: '2026-12-10', end_date: '2026-12-13', status: 'upcoming' },
+  'world-championships-stockholm-2026': { date: '2026-06-18', end_date: '2026-06-21', status: 'completed' },
+  'emea-london-olympia-2026': { date: '2026-03-24', end_date: '2026-03-29', status: 'completed' },
+  'munich-spring-2023': { date: '2023-03-04', end_date: '2023-03-04', status: 'completed' },
+  'chicago-north-american-open-championship-2023': { date: '2023-02-11', end_date: '2023-02-11', status: 'completed' },
 };
 
 // Real dates already in hyrox_races (from the official calendar or an earlier fix), used for races
@@ -1242,10 +1252,8 @@ const MASTER_RACE_DATES = {
 // them again would bring back empty copies in the race list.
 const DUPLICATE_RACE_IDS = new Set([
   'rotterdam-2025', // results are under rotterdam-spring-2025
-  'apac-championship-brisbane-2026',
-  'beijing-i-2026',
-  'emea-london-olympia-2026',
-  'red-bull-monday-night-shift-hyrox-invitational-2026',
+  'apac-championship-brisbane-2026', // results are under brisbane-2026
+  'beijing-i-2026', // results are under beijing-2026
 ]);
 
 const isPlaceholderDate = (d) => !d || String(d).slice(5, 10) === '12-31';
@@ -1307,13 +1315,20 @@ async function discoverOfficialRaces(page, seasonSlug, seasonLabel) {
     if (cleanCity === 'washington-dc' && seasonLabel === '26/27') {
       raceId = `washington-dc-sep-${year}`;
     }
+    // Same "<city>-<year>" as another race of that year: give these their own id.
+    const OWN_IDS = {
+      '25/26|2026 Stockholm': ['world-championships-stockholm-2026', 'HYROX World Championships Stockholm 2026'],
+      '22/23|2023 München': ['munich-spring-2023', 'HYROX München Spring 2023'],
+    };
+    const own = OWN_IDS[`${seasonLabel}|${rawName}`];
+    if (own) raceId = own[0];
     const country = getCountryByCity(cityName);
 
     const master = MASTER_RACE_DATES[raceId] || savedDates[raceId] || {};
     const exactDate = master.date || `${year}-12-31`;
     const exactEndDate = master.end_date || exactDate;
     const status = master.status || (exactDate > today ? 'upcoming' : 'completed');
-    const raceName = (cleanCity === 'washington-dc' && seasonLabel === '26/27')
+    const raceName = own ? own[1] : (cleanCity === 'washington-dc' && seasonLabel === '26/27')
       ? `HYROX Washington DC September ${year}`
       : `HYROX ${cityName} ${year}`;
 
@@ -1421,7 +1436,7 @@ async function updateRaceAthleteCount(raceId) {
 async function main() {
   const seasonsToRun = FORCE_SEASON
     ? SEASONS.filter((s) => s.slug === FORCE_SEASON)
-    : SEASONS;
+    : SEASONS.filter((s) => !s.onlyWhenForced);
 
   // Launch headless Chromium browser
   console.log('ðŸŒ Launching Chromium browser (Stealth Mode)...');
