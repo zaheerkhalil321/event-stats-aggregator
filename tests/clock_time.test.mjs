@@ -14,3 +14,10 @@ describe('clockTime', () => {
     assert.equal(clockTime(null), null);
   });
 });
+
+it('clockTime carries minutes over 59 into hours (Elite minutes:seconds)', () => {
+  assert.equal(clockTime('62:40.12'), '01:02:40');
+  assert.equal(clockTime('69:04'), '01:09:04');
+  assert.equal(clockTime('59:59.99'), '00:59:59');
+});
+

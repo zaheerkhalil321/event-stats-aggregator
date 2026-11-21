@@ -337,3 +337,10 @@ test('reassignByOwner leaves results alone when no Overall list claims them', ()
   assert.equal(r.kept.length, 2);
   assert.equal(r.moved.length, 0);
 });
+
+test('normalizeFinishTime: Elite times over 60 minutes carry into hours', () => {
+  assert.equal(normalizeFinishTime('Finish Times62:40.12'), '01:02:40');
+  assert.equal(normalizeFinishTime('66:00'), '01:06:00');
+  assert.equal(normalizeFinishTime('1:02:03'), '01:02:03');
+});
+

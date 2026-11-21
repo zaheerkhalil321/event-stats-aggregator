@@ -82,13 +82,18 @@ const nameTokens = (s) => new Set(normName(s).split(/[ ,]+/).filter((t) => t.len
  * "Finish Times") and Elite 15 races show hundredths and no hours ("47:54.15" -> "00:47:54").
  * Text without a time (e.g. "DNF") is returned as it is; an empty cell gives null.
  */
+// hh:mm:ss with minutes over 59 carried into hours: Elite lists show "62:40.12" (minutes:seconds).
+export function carryMinutes(h, mm, ss) {
+  return [h + Math.floor(mm / 60), mm % 60].map((v) => String(v).padStart(2, '0')).join(':') + ':' + String(ss).padStart(2, '0');
+}
+
 export function normalizeFinishTime(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return null;
   const m = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?/);
   if (!m) return text.replace(/^(Total|Finish\s*Times?)\s*/i, '').trim() || null;
   const [h, mm, ss] = m[3] !== undefined ? [m[1], m[2], m[3]] : ['0', m[1], m[2]];
-  return [h, mm, ss].map((v) => v.padStart(2, '0')).join(':');
+  return carryMinutes(+h, +mm, ss);
 }
 
 export function timeToSeconds(t) {
