@@ -1,7 +1,9 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@libsql/client';
-import { updateSql } from '../scripts/lib/athlete_update_sql.mjs';
+import fs from 'node:fs';
+import { updateSql, cleanDisqualReason } from '../scripts/lib/athlete_update_sql.mjs';
+import { parseDeepDetail } from '../scripts/backfill_splits.mjs';
 
 const COLUMNS = ['run_1', 'skierg', 'run_2', 'sled_push', 'run_3', 'sled_pull', 'run_4', 'burpee_jumps', 'run_5', 'rowing', 'run_6',
   'farmers_carry', 'run_7', 'sandbag_lunges', 'run_8', 'wall_balls', 'roxzone', 'run_total', 'best_run_lap', 'bib_number', 'age_group',
@@ -13,7 +15,7 @@ describe('Athlete enrichment SQL', () => {
   beforeEach(async () => {
     db = createClient({ url: ':memory:' });
     await db.execute(`CREATE TABLE hyrox_athlete_results (id INTEGER PRIMARY KEY, ${COLUMNS.map((c) => `${c} TEXT`).join(', ')},
-      gender_rank INTEGER, age_group_rank INTEGER, updated_at TEXT)`);
+      total_time TEXT, gender_rank INTEGER, age_group_rank INTEGER, updated_at TEXT)`);
   });
   const row = async (id) => (await db.execute({ sql: 'SELECT * FROM hyrox_athlete_results WHERE id = ?', args: [id] })).rows[0];
 
@@ -83,5 +85,37 @@ describe('Athlete enrichment SQL', () => {
 
   it('TC58: rejects a non-numeric id', () => {
     assert.throws(() => updateSql({ id: '1; DROP TABLE x' }));
+  });
+
+  it('TC70: a finisher whose detail page shows no splits is never marked DNS', async () => {
+    // Real page: a detail URL without the event code returns mika's empty template (all dashes).
+    const html = fs.readFileSync(new URL('./fixtures/detail_no_event.html', import.meta.url), 'utf8');
+    const parsed = parseDeepDetail(html);
+    assert.equal(parsed.run_1, null);
+    assert.equal(cleanDisqualReason(parsed.disqual_reason), null);
+    await db.execute(`INSERT INTO hyrox_athlete_results (id, total_time) VALUES (3, '01:15:16')`);
+    await db.execute(updateSql({ id: 3, dns: true, disqual_reason: parsed.disqual_reason || 'DNS' }));
+    const r = await row(3);
+    assert.equal(r.disqual_reason, null, 'a row with a finish time is a finisher, not a DNS');
+    assert.equal(r.run_1, '–', 'still marked as attempted');
+    assert.equal(r.total_time, '01:15:16');
+  });
+
+  it('TC71: the column header is never stored as a disqualification reason', async () => {
+    assert.equal(cleanDisqualReason('Disqual Reason'), null);
+    assert.equal(cleanDisqualReason(' disqualification reason '), null);
+    assert.equal(cleanDisqualReason('–'), null);
+    assert.equal(cleanDisqualReason('Code 11 - missing farmers carry lap'), 'Code 11 - missing farmers carry lap');
+    await db.execute(`INSERT INTO hyrox_athlete_results (id, total_time) VALUES (4, '01:02:03')`);
+    await db.execute(updateSql({ id: 4, run_1: '00:04:00', disqual_reason: 'Disqual Reason' }));
+    assert.equal((await row(4)).disqual_reason, null);
+    await db.execute(updateSql({ id: 4, run_1: '00:04:00', disqual_reason: 'missing workout' }));
+    assert.equal((await row(4)).disqual_reason, 'missing workout');
+  });
+
+  it('TC72: a row without a finish time on an empty page is still a DNS', async () => {
+    await db.execute(`INSERT INTO hyrox_athlete_results (id, total_time) VALUES (5, NULL)`);
+    await db.execute(updateSql({ id: 5, dns: true, disqual_reason: 'Disqual Reason' }));
+    assert.equal((await row(5)).disqual_reason, 'DNS');
   });
 });

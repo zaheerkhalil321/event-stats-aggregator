@@ -32,6 +32,7 @@ import { raceOwners } from './scripts/lib/overall_owners.mjs';
 import { raceRegion } from './scripts/lib/startlist.mjs';
 import { STALE_MINUTES, STARTLIST_DDL, looksUnmatched, raceInStartlistWindow, racingFreshness, recordPassStats, refreshRacing, removeOldStartlists, syncStartlist } from './scripts/lib/live_tracking.mjs';
 import { laneFilter } from './scripts/lib/live_planner.mjs';
+import { cleanDisqualReason } from './scripts/lib/athlete_update_sql.mjs';
 
 dotenv.config();
 
@@ -359,7 +360,7 @@ async function scrapeSplits(page, athlete) {
     athlete.best_run_lap = getVal('Best Run Lap');
     athlete.penalty_time = getVal('Penalty', '*Penalty');
     athlete.bonus_time = getVal('Bonus', '*Bonus');
-    athlete.disqual_reason = getVal('Disqual Reason');
+    athlete.disqual_reason = cleanDisqualReason(getVal('Disqual Reason'));
     athlete.bib_number = athlete.bib_number || getVal('Bib Number', 'Bib', 'Startnummer');
 
     // Extract station ranks from table rows
